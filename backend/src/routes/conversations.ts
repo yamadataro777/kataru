@@ -72,7 +72,8 @@ router.post('/:id/turns', upload.single('audio'), async (req: Request<{ id: stri
     res.json(result);
   } catch (error) {
     console.error('Error processing turn:', error);
-    res.status(500).json({ error: 'Failed to process turn' });
+    const message = error instanceof Error ? error.message : 'Failed to process turn';
+    res.status(500).json({ error: message, message });
   }
 });
 

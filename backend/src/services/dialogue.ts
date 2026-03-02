@@ -260,15 +260,21 @@ export async function processTurn(
   const existingTurns = await getConversationTurns(conversationId);
   const turnHistory = buildTurnHistory(existingTurns);
 
-  const aiResponse = await generateContent(
-    buildResponsePrompt({
-      phase: newPhase,
-      questionType,
-      runningContext: updatedContext,
-      extracted,
-      turnHistory,
-    })
-  );
+  let aiResponse: string;
+  try {
+    aiResponse = await generateContent(
+      buildResponsePrompt({
+        phase: newPhase,
+        questionType,
+        runningContext: updatedContext,
+        extracted,
+        turnHistory,
+      })
+    );
+  } catch (err) {
+    console.error('Gemini response generation failed, using fallback:', err);
+    aiResponse = 'なるほど、ありがとうございます。もう少し詳しく教えていただけますか？';
+  }
 
   // 10. Create turn in DB
   const turn = await createTurn({

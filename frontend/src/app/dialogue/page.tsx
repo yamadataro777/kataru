@@ -22,6 +22,7 @@ export default function DialoguePage() {
     error,
     startConversation,
     retryStart,
+    retryTurn,
     submitTurn,
     endSession,
   } = useDialogue();
@@ -211,7 +212,7 @@ export default function DialoguePage() {
             {error}
           </p>
           <button
-            onClick={retryStart}
+            onClick={retryTurn}
             className="text-[9px] tracking-[2px] px-4 py-1.5 rounded cursor-pointer transition-all"
             style={{
               border: '1px solid rgba(0,212,255,0.3)',

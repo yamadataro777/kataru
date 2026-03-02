@@ -131,7 +131,7 @@ export async function sendTurn(
     const formData = new FormData();
     formData.append('audio', audioBlob, `recording.${ext}`);
     if (transcript) formData.append('transcript', transcript);
-    const signal = createTimeoutSignal(60_000);
+    const signal = createTimeoutSignal(90_000);
     try {
       const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/turns`, {
         method: 'POST',
@@ -139,8 +139,8 @@ export async function sendTurn(
         signal,
       });
       if (!res.ok) {
-        const error = await res.json().catch(() => ({ message: res.statusText }));
-        throw new Error(error.message || 'Failed to send turn');
+        const body = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(body.message || body.error || 'Failed to send turn');
       }
       return res.json();
     } catch (err) {

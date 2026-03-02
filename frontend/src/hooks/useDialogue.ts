@@ -43,6 +43,7 @@ interface UseDialogueResult {
   error: string | null;
   startConversation: () => Promise<void>;
   retryStart: () => void;
+  retryTurn: () => void;
   submitTurn: (audioBlob?: Blob, transcript?: string) => Promise<void>;
   endSession: () => Promise<void>;
 }
@@ -59,6 +60,7 @@ export default function useDialogue(): UseDialogueResult {
   const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const lastTurnRef = useRef<{ blob?: Blob; transcript?: string } | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -156,6 +158,7 @@ export default function useDialogue(): UseDialogueResult {
     if (!conversation || isSending) return;
     setIsSending(true);
     setError(null);
+    lastTurnRef.current = { blob: audioBlob, transcript };
 
     try {
       const { turn, conversation: updatedConv } = await apiSendTurn(
@@ -186,6 +189,13 @@ export default function useDialogue(): UseDialogueResult {
     }
   }, [conversation, isSending]);
 
+  const retryTurn = useCallback(() => {
+    if (!lastTurnRef.current) return;
+    setError(null);
+    const { blob, transcript } = lastTurnRef.current;
+    submitTurn(blob, transcript);
+  }, [submitTurn]);
+
   const endSession = useCallback(async () => {
     if (!conversation || isEnding) return;
     setIsEnding(true);
@@ -213,6 +223,7 @@ export default function useDialogue(): UseDialogueResult {
     error,
     startConversation,
     retryStart,
+    retryTurn,
     submitTurn,
     endSession,
   };
