@@ -58,14 +58,16 @@ function getFileExtension(mimeType: string): string {
   return 'webm';
 }
 
-async function whisperTranscribe(audioUrl: string): Promise<string> {
+async function whisperTranscribe(audioUrl: string, mimeType?: string): Promise<string> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const audioResponse = await fetch(audioUrl);
   const arrayBuffer = await audioResponse.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
-  const file = await toFile(buffer, 'recording.webm', { type: 'audio/webm' });
+  const ext = mimeType ? getFileExtension(mimeType) : 'webm';
+  const type = mimeType || 'audio/webm';
+  const file = await toFile(buffer, `recording.${ext}`, { type });
 
   const whisperResponse = await openai.audio.transcriptions.create({
     model: 'whisper-1',
@@ -217,7 +219,7 @@ export async function processTurn(
   if (clientTranscript) {
     transcript = clientTranscript;
   } else if (audioUrl) {
-    transcript = await whisperTranscribe(audioUrl);
+    transcript = await whisperTranscribe(audioUrl, mimeType);
   }
 
   if (!transcript) {

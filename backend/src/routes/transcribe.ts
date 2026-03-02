@@ -32,7 +32,10 @@ router.post('/', async (req: Request, res: Response) => {
       const arrayBuffer = await audioResponse.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      const file = await toFile(buffer, 'recording.webm', { type: 'audio/webm' });
+      // Derive format from the stored audio URL
+      const audioExt = session.audio_url.match(/\.(mp4|wav|webm|m4a)(?:\?|$)/)?.[1] || 'webm';
+      const audioMime = audioExt === 'mp4' ? 'audio/mp4' : audioExt === 'wav' ? 'audio/wav' : audioExt === 'm4a' ? 'audio/m4a' : 'audio/webm';
+      const file = await toFile(buffer, `recording.${audioExt}`, { type: audioMime });
 
       const whisperResponse = await openai.audio.transcriptions.create({
         model: 'whisper-1',
