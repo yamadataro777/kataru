@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Conversation, ConversationTurn, ConversationPhase } from '@/types/conversation';
 import {
   createConversation as apiCreateConversation,
@@ -8,15 +8,41 @@ import {
   endConversation as apiEndConversation,
 } from '@/lib/api';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const HEALTH_TIMEOUT = 3_000;
+const MAX_WAKE_POLLS = 20;
+const POLL_INTERVAL = 3_000;
+
+async function checkHealth(signal: AbortSignal): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT);
+
+  const onParentAbort = () => controller.abort();
+  signal.addEventListener('abort', onParentAbort);
+
+  try {
+    const res = await fetch(`${API_URL}/health`, { signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', onParentAbort);
+  }
+}
+
 interface UseDialogueResult {
   conversation: Conversation | null;
   turns: ConversationTurn[];
   phase: ConversationPhase;
   isLoading: boolean;
+  isWaking: boolean;
+  wakingProgress: number;
   isSending: boolean;
   isEnding: boolean;
   error: string | null;
   startConversation: () => Promise<void>;
+  retryStart: () => void;
   submitTurn: (audioBlob?: Blob, transcript?: string) => Promise<void>;
   endSession: () => Promise<void>;
 }
@@ -26,19 +52,75 @@ export default function useDialogue(): UseDialogueResult {
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [phase, setPhase] = useState<ConversationPhase>('intake');
   const [isLoading, setIsLoading] = useState(false);
+  const [isWaking, setIsWaking] = useState(false);
+  const [wakingProgress, setWakingProgress] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  const ensureServerAwake = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    // Quick health check
+    const isUp = await checkHealth(signal);
+    if (isUp) return true;
+
+    // Server is cold — start polling
+    setIsWaking(true);
+    setWakingProgress(0);
+
+    for (let i = 0; i < MAX_WAKE_POLLS; i++) {
+      if (signal.aborted) return false;
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+      if (signal.aborted) return false;
+
+      setWakingProgress(Math.round(((i + 1) / MAX_WAKE_POLLS) * 100));
+      const alive = await checkHealth(signal);
+      if (alive) {
+        setIsWaking(false);
+        setWakingProgress(100);
+        return true;
+      }
+    }
+
+    setIsWaking(false);
+    return false;
+  }, []);
 
   const startConversation = useCallback(async () => {
     if (startedRef.current) return;
     startedRef.current = true;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsLoading(true);
     setError(null);
+    setIsWaking(false);
+    setWakingProgress(0);
 
     try {
+      const serverReady = await ensureServerAwake(controller.signal);
+      if (controller.signal.aborted) return;
+
+      if (!serverReady) {
+        setError('サーバーに接続できませんでした。時間を置いて再試行してください。');
+        startedRef.current = false;
+        setIsLoading(false);
+        return;
+      }
+
       const { conversation: conv, turn } = await apiCreateConversation();
+      if (controller.signal.aborted) return;
+
       setConversation(conv);
       setPhase(conv.phase as ConversationPhase);
       setTurns([{
@@ -53,12 +135,22 @@ export default function useDialogue(): UseDialogueResult {
         phase: 'intake',
       }]);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setError(err instanceof Error ? err.message : '対話の開始に失敗しました');
       startedRef.current = false;
     } finally {
-      setIsLoading(false);
+      if (!controller.signal.aborted) {
+        setIsLoading(false);
+        setIsWaking(false);
+      }
     }
-  }, []);
+  }, [ensureServerAwake]);
+
+  const retryStart = useCallback(() => {
+    startedRef.current = false;
+    setError(null);
+    startConversation();
+  }, [startConversation]);
 
   const submitTurn = useCallback(async (audioBlob?: Blob, transcript?: string) => {
     if (!conversation || isSending) return;
@@ -114,10 +206,13 @@ export default function useDialogue(): UseDialogueResult {
     turns,
     phase,
     isLoading,
+    isWaking,
+    wakingProgress,
     isSending,
     isEnding,
     error,
     startConversation,
+    retryStart,
     submitTurn,
     endSession,
   };

@@ -3,16 +3,36 @@ import { Conversation, ConversationReport } from '@/types/conversation';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+export function createTimeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message || `Request failed: ${res.status}`);
+  const timeoutMs = 30_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      ...options,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(error.message || `Request failed: ${res.status}`);
+    }
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('サーバーに接続できませんでした。時間を置いて再試行してください。');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 export async function createSession(): Promise<Session> {
@@ -35,15 +55,24 @@ export async function uploadAudio(sessionId: string, audioBlob: Blob): Promise<S
   const ext = audioBlob.type.includes('mp4') ? 'mp4' : audioBlob.type.includes('wav') ? 'wav' : 'webm';
   const formData = new FormData();
   formData.append('audio', audioBlob, `recording.${ext}`);
-  const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/audio`, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(error.message || 'Upload failed');
+  const signal = createTimeoutSignal(60_000);
+  try {
+    const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/audio`, {
+      method: 'POST',
+      body: formData,
+      signal,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(error.message || 'Upload failed');
+    }
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('アップロードがタイムアウトしました。再試行してください。');
+    }
+    throw err;
   }
-  return res.json();
 }
 
 export async function transcribe(sessionId: string, transcript?: string): Promise<unknown> {
@@ -88,15 +117,24 @@ export async function sendTurn(
     const formData = new FormData();
     formData.append('audio', audioBlob, `recording.${ext}`);
     if (transcript) formData.append('transcript', transcript);
-    const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/turns`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(error.message || 'Failed to send turn');
+    const signal = createTimeoutSignal(60_000);
+    try {
+      const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/turns`, {
+        method: 'POST',
+        body: formData,
+        signal,
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(error.message || 'Failed to send turn');
+      }
+      return res.json();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('送信がタイムアウトしました。再試行してください。');
+      }
+      throw err;
     }
-    return res.json();
   }
   return request(`/api/conversations/${conversationId}/turns`, {
     method: 'POST',

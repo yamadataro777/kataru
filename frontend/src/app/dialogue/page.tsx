@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useDialogue from '@/hooks/useDialogue';
 import PhaseIndicator from '@/components/dialogue/PhaseIndicator';
@@ -15,17 +15,32 @@ export default function DialoguePage() {
     turns,
     phase,
     isLoading,
+    isWaking,
+    wakingProgress,
     isSending,
     isEnding,
     error,
     startConversation,
+    retryStart,
     submitTurn,
     endSession,
   } = useDialogue();
 
+  const [slowLoading, setSlowLoading] = useState(false);
+
   useEffect(() => {
     startConversation();
   }, [startConversation]);
+
+  // Show "taking longer than expected" after 10s if still loading but not in waking mode
+  useEffect(() => {
+    if (!isLoading || isWaking) {
+      setSlowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowLoading(true), 10_000);
+    return () => clearTimeout(timer);
+  }, [isLoading, isWaking]);
 
   const handleRecordingComplete = useCallback(
     (blob: Blob, transcript: string) => {
@@ -48,19 +63,104 @@ export default function DialoguePage() {
     }
   }, [phase, conversation, handleEnd]);
 
+  // Full-screen error state (no conversation yet)
+  if (error && !conversation) {
+    return (
+      <div className="flex items-center justify-center min-h-dvh px-6">
+        <div className="flex flex-col items-center gap-6 max-w-xs text-center">
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center"
+            style={{
+              border: '1px solid rgba(255,59,122,0.4)',
+              background: 'rgba(255,59,122,0.08)',
+            }}
+          >
+            <span className="text-neon-magenta text-lg">!</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs tracking-[2px] text-neon-magenta">
+              接続エラー
+            </span>
+            <p className="text-[10px] leading-relaxed text-hud-white-dim">
+              {error}
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 w-full">
+            <button
+              onClick={retryStart}
+              className="text-[10px] tracking-[2px] px-6 py-2.5 rounded cursor-pointer transition-all"
+              style={{
+                border: '1px solid rgba(0,212,255,0.4)',
+                background: 'rgba(0,212,255,0.08)',
+                color: 'var(--neon-cyan)',
+              }}
+            >
+              再試行
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="text-[10px] tracking-[2px] px-6 py-2 rounded cursor-pointer transition-all bg-transparent"
+              style={{
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'var(--hud-white-dim)',
+              }}
+            >
+              ホームに戻る
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state with waking / slow loading support
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-dvh">
-        <div className="flex flex-col items-center gap-4">
-          <span
-            className="text-xs tracking-[3px] text-neon-cyan"
-            style={{ animation: 'neon-flicker 2s ease infinite' }}
-          >
-            INITIALIZING...
-          </span>
-          <span className="text-[10px] tracking-[2px] text-hud-white-dim">
-            対話を準備しています
-          </span>
+        <div className="flex flex-col items-center gap-4 px-6 max-w-xs">
+          {isWaking ? (
+            <>
+              <span
+                className="text-xs tracking-[3px] text-neon-cyan"
+                style={{ animation: 'neon-flicker 2s ease infinite' }}
+              >
+                サーバー起動中...
+              </span>
+              {/* Progress bar */}
+              <div
+                className="w-48 h-[2px] rounded-full overflow-hidden"
+                style={{ background: 'rgba(0,212,255,0.15)' }}
+              >
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${wakingProgress}%`,
+                    background: 'var(--neon-cyan)',
+                    boxShadow: '0 0 8px var(--neon-cyan)',
+                  }}
+                />
+              </div>
+              <span className="text-[10px] tracking-[1px] text-hud-white-dim text-center leading-relaxed">
+                サーバーがスリープ状態から復帰中です。
+                <br />
+                通常30〜60秒かかります。
+              </span>
+            </>
+          ) : (
+            <>
+              <span
+                className="text-xs tracking-[3px] text-neon-cyan"
+                style={{ animation: 'neon-flicker 2s ease infinite' }}
+              >
+                INITIALIZING...
+              </span>
+              <span className="text-[10px] tracking-[2px] text-hud-white-dim">
+                {slowLoading
+                  ? '予想より時間がかかっています...'
+                  : '対話を準備しています'}
+              </span>
+            </>
+          )}
         </div>
       </div>
     );
@@ -104,12 +204,23 @@ export default function DialoguePage() {
       {/* Processing indicator */}
       <TurnProcessing isVisible={isSending} />
 
-      {/* Error display */}
+      {/* Inline error display (mid-conversation) */}
       {error && (
-        <div className="px-4 py-2">
+        <div className="px-4 py-2 flex flex-col items-center gap-2">
           <p className="text-[10px] text-neon-magenta tracking-[1px] text-center">
             {error}
           </p>
+          <button
+            onClick={retryStart}
+            className="text-[9px] tracking-[2px] px-4 py-1.5 rounded cursor-pointer transition-all"
+            style={{
+              border: '1px solid rgba(0,212,255,0.3)',
+              background: 'rgba(0,212,255,0.06)',
+              color: 'var(--neon-cyan)',
+            }}
+          >
+            再試行
+          </button>
         </div>
       )}
 
