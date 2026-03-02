@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSession, uploadAudio, transcribe, generateReport } from '@/lib/api';
+import { incrementFreeSessionsUsed } from '@/lib/session-tracker';
 
 type StepStatus = 'pending' | 'active' | 'done' | 'error';
 
@@ -59,6 +60,7 @@ export default function ProcessingPage() {
         updateStep(3, 'active');
         await generateReport(session.id);
         updateStep(3, 'done');
+        incrementFreeSessionsUsed();
 
         // Navigate to results
         setTimeout(() => {

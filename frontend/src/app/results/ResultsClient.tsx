@@ -100,13 +100,40 @@ export default function ResultsClient() {
           details={report.sentiment.details}
         />
 
-        {/* Report Sections */}
-        {report.structure.sections.map((section, i) => (
+        {/* Report Sections (paid only) */}
+        {report.structure?.sections?.map((section, i) => (
           <ReportSection key={i} heading={section.heading} content={section.content} />
         ))}
 
-        {/* Action Items */}
-        {report.action_items.length > 0 && (
+        {/* Contradictions (paid only) */}
+        {report.contradictions && report.contradictions.length > 0 && (
+          <GlassCard className="p-4" variant="magenta">
+            <span className="label label-magenta mb-3 block">CONTRADICTIONS</span>
+            <div className="flex flex-col gap-2">
+              {report.contradictions.map((item, i) => (
+                <div key={i} className="flex gap-2 items-start">
+                  <span className="text-neon-magenta text-xs flex-shrink-0">&#9671;</span>
+                  <p className="text-sm leading-6 text-hud-white opacity-85 tracking-wide">
+                    {item}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+        )}
+
+        {/* Thinking Pattern (paid only) */}
+        {report.thinking_pattern && (
+          <GlassCard className="p-4" variant="cyan">
+            <span className="label mb-2 block">THINKING PATTERN</span>
+            <p className="text-sm leading-7 text-hud-white opacity-90 tracking-wide">
+              {report.thinking_pattern}
+            </p>
+          </GlassCard>
+        )}
+
+        {/* Action Items (paid only) */}
+        {report.action_items && report.action_items.length > 0 && (
           <GlassCard className="p-4" variant="magenta">
             <span className="label label-magenta mb-3 block">ACTION ITEMS</span>
             <div className="flex flex-col gap-2">
@@ -120,6 +147,49 @@ export default function ResultsClient() {
               ))}
             </div>
           </GlassCard>
+        )}
+
+        {/* Upsell Teaser (shown for free reports - no action_items and no structure) */}
+        {(!report.action_items || report.action_items.length === 0) &&
+         (!report.structure || !report.structure.sections || report.structure.sections.length === 0) && (
+          <div
+            className="rounded-lg p-4 border"
+            style={{
+              borderColor: 'rgba(168,255,0,0.2)',
+              background: 'linear-gradient(135deg, rgba(168,255,0,0.03) 0%, rgba(0,212,255,0.03) 100%)',
+              boxShadow: '0 0 20px rgba(168,255,0,0.05)',
+            }}
+          >
+            <h3
+              className="text-xs font-bold tracking-[2px] mb-3"
+              style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
+            >
+              さらに深い分析を見る
+            </h3>
+            <div className="flex flex-col gap-2 mb-4">
+              {[
+                '具体的なアクション提案',
+                '発言の矛盾・盲点の指摘',
+                '思考パターン分析',
+                '3〜5セクションの詳細構造化',
+              ].map((feature, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-neon-lime text-[10px]">+</span>
+                  <span className="text-[10px] text-hud-white opacity-60 tracking-wide">{feature}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              className="w-full py-2.5 rounded text-[10px] font-bold tracking-[2px] border-0 cursor-pointer"
+              style={{
+                background: 'linear-gradient(135deg, rgba(168,255,0,0.15) 0%, rgba(168,255,0,0.05) 100%)',
+                color: 'var(--neon-lime)',
+                textShadow: '0 0 8px rgba(168,255,0,0.3)',
+              }}
+            >
+              Standardプランで詳細分析 &rarr;
+            </button>
+          </div>
         )}
 
         {/* Back button */}

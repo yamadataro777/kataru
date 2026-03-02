@@ -69,6 +69,20 @@ export default function RecordPage() {
         </div>
       </div>
 
+      {/* Recording Guidance */}
+      <div className="px-5 flex-shrink-0">
+        <div
+          className="rounded border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.03)] px-4 py-3"
+        >
+          <p className="text-[10px] tracking-[1px] leading-5 text-hud-white opacity-60">
+            今抱えている判断や悩みについて、自由に話してみてください
+          </p>
+          <p className="text-[9px] tracking-[1px] text-neon-cyan opacity-40 mt-1">
+            3〜5分がおすすめです
+          </p>
+        </div>
+      </div>
+
       {/* Equalizer */}
       <div className="flex-1 flex flex-col items-center justify-center gap-6">
         <CircularEqualizer frequencyData={frequencyData} size={240} />

@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { buildReportPrompt } from '../prompts/report-prompt';
+import { buildFreeReportPrompt, buildPaidReportPrompt } from '../prompts/report-prompt';
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -9,6 +9,8 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || '');
 const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+export type PlanType = 'free' | 'paid';
 
 export interface Report {
   title: string;
@@ -20,8 +22,10 @@ export interface Report {
     score: number;
     details: string;
   };
-  action_items: string[];
-  structure: {
+  action_items?: string[];
+  contradictions?: string[];
+  thinking_pattern?: string;
+  structure?: {
     sections: Array<{
       heading: string;
       content: string;
@@ -29,8 +33,10 @@ export interface Report {
   };
 }
 
-export async function generateReport(transcript: string): Promise<Report> {
-  const prompt = buildReportPrompt(transcript);
+export async function generateReport(transcript: string, plan: 'free' | 'paid' = 'free'): Promise<Report> {
+  const prompt = plan === 'paid'
+    ? buildPaidReportPrompt(transcript)
+    : buildFreeReportPrompt(transcript);
 
   const result = await model.generateContent(prompt);
   const text = result.response.text();

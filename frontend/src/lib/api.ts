@@ -53,10 +53,10 @@ export async function transcribe(sessionId: string, transcript?: string): Promis
   });
 }
 
-export async function generateReport(sessionId: string): Promise<unknown> {
+export async function generateReport(sessionId: string, plan?: 'free' | 'paid'): Promise<unknown> {
   return request('/api/report', {
     method: 'POST',
-    body: JSON.stringify({ session_id: sessionId }),
+    body: JSON.stringify({ session_id: sessionId, plan: plan || 'free' }),
   });
 }
 

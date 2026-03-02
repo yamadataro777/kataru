@@ -7,7 +7,7 @@ const router = Router();
 // POST / - Generate report
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { session_id } = req.body;
+    const { session_id, plan } = req.body;
 
     if (!session_id) {
       res.status(400).json({ error: 'session_id is required' });
@@ -27,7 +27,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     await updateSession(session_id, { status: 'generating' });
 
-    const report = await generateReport(session.transcript);
+    const report = await generateReport(session.transcript, plan || 'free');
 
     await updateSession(session_id, {
       report,

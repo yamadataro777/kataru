@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import OpenAI, { toFile } from 'openai';
 import { getSession, updateSession } from '../services/supabase';
+import { cleanTranscript } from '../utils/clean-transcript';
 
 const router = Router();
 
@@ -58,6 +59,7 @@ router.post('/', async (req: Request, res: Response) => {
       finalTranscript = finalTranscript.replace(pattern, '');
     }
     finalTranscript = finalTranscript.trim();
+    finalTranscript = cleanTranscript(finalTranscript);
 
     const wordCount = finalTranscript.length;
 

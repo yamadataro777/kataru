@@ -17,6 +17,8 @@ export interface Report {
   key_insights: string[];
   topics: string[];
   sentiment: { overall: string; score: number; details: string };
-  action_items: string[];
-  structure: { sections: { heading: string; content: string }[] };
+  action_items?: string[];
+  contradictions?: string[];
+  thinking_pattern?: string;
+  structure?: { sections: { heading: string; content: string }[] };
 }

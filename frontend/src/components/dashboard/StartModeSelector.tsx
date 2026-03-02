@@ -1,16 +1,30 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { hasFreeSessions } from '@/lib/session-tracker';
 
 export default function StartModeSelector() {
   const router = useRouter();
+  const [canRecord, setCanRecord] = useState(true);
+  const [showPaywall, setShowPaywall] = useState(false);
+
+  useEffect(() => {
+    setCanRecord(hasFreeSessions());
+  }, []);
 
   return (
     <div className="flex items-center justify-center gap-8 py-8">
       {/* Record Button */}
       <div className="flex flex-col items-center gap-3">
         <button
-          onClick={() => router.push('/record')}
+          onClick={() => {
+            if (canRecord) {
+              router.push('/record');
+            } else {
+              setShowPaywall(true);
+            }
+          }}
           className="
             relative w-[120px] h-[120px] rounded-full
             border-2 border-neon-cyan
@@ -105,6 +119,48 @@ export default function StartModeSelector() {
           AIと対話で思考を深掘り
         </span>
       </div>
+      {showPaywall && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,14,26,0.9)]">
+          <div
+            className="mx-5 max-w-sm rounded-lg border border-[rgba(0,212,255,0.2)] bg-[#0A0E1A] p-6"
+            style={{ boxShadow: '0 0 40px rgba(0,212,255,0.1)' }}
+          >
+            <h3 className="text-sm font-bold tracking-[2px] text-neon-cyan mb-3">
+              無料トライアル終了
+            </h3>
+            <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
+              Standardプラン（月額¥1,480）で、毎月15回の録音・詳細レポート・対話モードが使えます。
+            </p>
+            <div className="flex flex-col gap-2 mb-5">
+              <div className="flex items-center gap-2">
+                <span className="text-neon-lime text-xs">&#10003;</span>
+                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">月15回の録音セッション</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-neon-lime text-xs">&#10003;</span>
+                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">詳細分析レポート・アクション提案</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-neon-lime text-xs">&#10003;</span>
+                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">AI対話モード</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-neon-lime text-xs">&#10003;</span>
+                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">レポート永久保存</span>
+              </div>
+            </div>
+            <p className="text-[9px] text-neon-cyan opacity-50 tracking-[1px] text-center mb-4">
+              近日公開
+            </p>
+            <button
+              onClick={() => setShowPaywall(false)}
+              className="w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(232,237,245,0.15)] rounded py-2 cursor-pointer"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
