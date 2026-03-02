@@ -21,13 +21,28 @@ router.get('/', async (_req: Request, res: Response) => {
 
     // Aggregate topics from recent reports
     const recentTopics: string[] = [];
+    const topicCountMap: Record<string, number> = {};
     const sentimentCounts: Record<string, number> = {
       positive: 0,
       neutral: 0,
       negative: 0,
     };
+    const pendingActions: { action: string; session_id: string; session_date: string; session_title: string }[] = [];
+
+    // Count sessions created this month
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    let monthlySessionCount = 0;
+
+    // Recent completed sessions for timeline (already sorted desc by created_at)
+    const recentSessions: { id: string; created_at: string; title: string; summary: string; topics: string[] }[] = [];
 
     for (const session of allSessions) {
+      // Count monthly sessions
+      if (session.created_at >= monthStart) {
+        monthlySessionCount++;
+      }
+
       if (session.report) {
         const report = typeof session.report === 'string'
           ? JSON.parse(session.report)
@@ -38,6 +53,7 @@ router.get('/', async (_req: Request, res: Response) => {
             if (!recentTopics.includes(topic)) {
               recentTopics.push(topic);
             }
+            topicCountMap[topic] = (topicCountMap[topic] || 0) + 1;
           }
         }
 
@@ -47,8 +63,36 @@ router.get('/', async (_req: Request, res: Response) => {
             sentimentCounts[key]++;
           }
         }
+
+        // Collect action_items
+        if (report.action_items && Array.isArray(report.action_items)) {
+          for (const action of report.action_items) {
+            pendingActions.push({
+              action,
+              session_id: session.id,
+              session_date: session.created_at,
+              session_title: report.title || '',
+            });
+          }
+        }
+
+        // Collect recent completed sessions for timeline
+        if (session.status === 'completed' && recentSessions.length < 5) {
+          recentSessions.push({
+            id: session.id,
+            created_at: session.created_at,
+            title: report.title || '',
+            summary: report.summary || '',
+            topics: report.topics || [],
+          });
+        }
       }
     }
+
+    // Build sorted topic_counts
+    const topicCounts = Object.entries(topicCountMap)
+      .map(([topic, count]) => ({ topic, count }))
+      .sort((a, b) => b.count - a.count);
 
     res.json({
       total_sessions: totalSessions,
@@ -57,6 +101,11 @@ router.get('/', async (_req: Request, res: Response) => {
       avg_duration: Math.round(avgDuration),
       recent_topics: recentTopics.slice(0, 20),
       sentiment_distribution: sentimentCounts,
+      // New fields for THINKING MAP
+      topic_counts: topicCounts,
+      recent_sessions: recentSessions,
+      pending_actions: pendingActions,
+      monthly_session_count: monthlySessionCount,
     });
   } catch (error) {
     console.error('Error getting analytics:', error);

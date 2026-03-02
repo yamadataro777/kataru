@@ -146,19 +146,66 @@ export async function endConversation(id: string): Promise<{ conversation: Conve
   return request(`/api/conversations/${id}/end`, { method: 'POST' });
 }
 
-export async function getAnalytics(): Promise<{
+export interface TopicCount {
+  topic: string;
+  count: number;
+}
+
+export interface RecentSessionSummary {
+  id: string;
+  createdAt: string;
+  title: string;
+  summary: string;
+  topics: string[];
+}
+
+export interface PendingAction {
+  action: string;
+  sessionId: string;
+  sessionDate: string;
+  sessionTitle: string;
+}
+
+export interface AnalyticsData {
+  // Existing fields (used by Home page)
   totalSessions: number;
   totalWords: number;
   avgDuration: number;
   totalDuration: number;
   recentTopics: string[];
-}> {
+  // New fields for THINKING MAP
+  topicCounts: TopicCount[];
+  recentSessions: RecentSessionSummary[];
+  pendingActions: PendingAction[];
+  monthlySessionCount: number;
+}
+
+export async function getAnalytics(): Promise<AnalyticsData> {
   const data = await request<Record<string, unknown>>('/api/analytics');
+
+  const rawRecentSessions = (data.recent_sessions as Array<Record<string, unknown>>) ?? [];
+  const rawPendingActions = (data.pending_actions as Array<Record<string, unknown>>) ?? [];
+
   return {
     totalSessions: (data.total_sessions as number) ?? 0,
     totalWords: (data.total_words as number) ?? 0,
     avgDuration: (data.avg_duration as number) ?? 0,
     totalDuration: (data.total_duration as number) ?? 0,
     recentTopics: (data.recent_topics as string[]) ?? [],
+    topicCounts: (data.topic_counts as TopicCount[]) ?? [],
+    recentSessions: rawRecentSessions.map((s) => ({
+      id: s.id as string,
+      createdAt: s.created_at as string,
+      title: s.title as string,
+      summary: s.summary as string,
+      topics: (s.topics as string[]) ?? [],
+    })),
+    pendingActions: rawPendingActions.map((a) => ({
+      action: a.action as string,
+      sessionId: a.session_id as string,
+      sessionDate: a.session_date as string,
+      sessionTitle: a.session_title as string,
+    })),
+    monthlySessionCount: (data.monthly_session_count as number) ?? 0,
   };
 }
