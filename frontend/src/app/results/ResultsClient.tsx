@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getSession } from '@/lib/api';
 import { Session } from '@/types/session';
+import { shouldShowFeedbackAfterResults } from '@/lib/session-tracker';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
 import KeyInsights from '@/components/report/KeyInsights';
@@ -59,7 +60,13 @@ export default function ResultsClient() {
       {/* Header */}
       <div className="px-5 py-4 flex-shrink-0">
         <button
-          onClick={() => router.push('/')}
+          onClick={() => {
+            if (shouldShowFeedbackAfterResults()) {
+              router.push('/feedback');
+            } else {
+              router.push('/');
+            }
+          }}
           className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer mb-3 flex items-center gap-1"
         >
           <span>&larr;</span> BACK
@@ -149,52 +156,17 @@ export default function ResultsClient() {
           </GlassCard>
         )}
 
-        {/* Upsell Teaser (shown for free reports - no action_items and no structure) */}
-        {(!report.action_items || report.action_items.length === 0) &&
-         (!report.structure || !report.structure.sections || report.structure.sections.length === 0) && (
-          <div
-            className="rounded-lg p-4 border"
-            style={{
-              borderColor: 'rgba(168,255,0,0.2)',
-              background: 'linear-gradient(135deg, rgba(168,255,0,0.03) 0%, rgba(0,212,255,0.03) 100%)',
-              boxShadow: '0 0 20px rgba(168,255,0,0.05)',
-            }}
-          >
-            <h3
-              className="text-xs font-bold tracking-[2px] mb-3"
-              style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
-            >
-              さらに深い分析を見る
-            </h3>
-            <div className="flex flex-col gap-2 mb-4">
-              {[
-                '具体的なアクション提案',
-                '発言の矛盾・盲点の指摘',
-                '思考パターン分析',
-                '3〜5セクションの詳細構造化',
-              ].map((feature, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-neon-lime text-[10px]">+</span>
-                  <span className="text-[10px] text-hud-white opacity-60 tracking-wide">{feature}</span>
-                </div>
-              ))}
-            </div>
-            <button
-              className="w-full py-2.5 rounded text-[10px] font-bold tracking-[2px] border-0 cursor-pointer"
-              style={{
-                background: 'linear-gradient(135deg, rgba(168,255,0,0.15) 0%, rgba(168,255,0,0.05) 100%)',
-                color: 'var(--neon-lime)',
-                textShadow: '0 0 8px rgba(168,255,0,0.3)',
-              }}
-            >
-              Standardプランで詳細分析 &rarr;
-            </button>
-          </div>
-        )}
-
         {/* Back button */}
         <div className="mt-4 flex justify-center">
-          <NeonButton onClick={() => router.push('/')}>BACK TO HOME</NeonButton>
+          <NeonButton onClick={() => {
+            if (shouldShowFeedbackAfterResults()) {
+              router.push('/feedback');
+            } else {
+              router.push('/');
+            }
+          }}>
+            {shouldShowFeedbackAfterResults() ? '次へ' : 'ホームに戻る'}
+          </NeonButton>
         </div>
       </div>
     </div>

@@ -2,16 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { hasFreeSessions } from '@/lib/session-tracker';
+import { hasFreeSessions, isTrialExhausted, canAccessDialogue, getFeedbackScore } from '@/lib/session-tracker';
+import GlassCard from '@/components/ui/GlassCard';
 
 export default function StartModeSelector() {
   const router = useRouter();
   const [canRecord, setCanRecord] = useState(true);
-  const [showPaywall, setShowPaywall] = useState(false);
+  const [dialogueLocked, setDialogueLocked] = useState(false);
+  const [showDialogueLock, setShowDialogueLock] = useState(false);
 
   useEffect(() => {
-    setCanRecord(hasFreeSessions());
+    const trialDone = isTrialExhausted();
+    setCanRecord(trialDone || hasFreeSessions());
+    setDialogueLocked(!canAccessDialogue());
   }, []);
+
+  const feedbackScore = getFeedbackScore();
 
   return (
     <div className="flex items-center justify-center gap-8 py-8">
@@ -21,8 +27,6 @@ export default function StartModeSelector() {
           onClick={() => {
             if (canRecord) {
               router.push('/record');
-            } else {
-              setShowPaywall(true);
             }
           }}
           className="
@@ -75,7 +79,13 @@ export default function StartModeSelector() {
       {/* Dialogue Button */}
       <div className="flex flex-col items-center gap-3">
         <button
-          onClick={() => router.push('/dialogue')}
+          onClick={() => {
+            if (!dialogueLocked) {
+              router.push('/dialogue');
+            } else {
+              setShowDialogueLock(true);
+            }
+          }}
           className="
             relative w-[120px] h-[120px] rounded-full
             border-2 border-neon-magenta
@@ -86,6 +96,7 @@ export default function StartModeSelector() {
           "
           style={{
             boxShadow: '0 0 20px rgba(255,59,122,0.15), inset 0 0 20px rgba(255,59,122,0.05)',
+            opacity: dialogueLocked ? 0.4 : 1,
           }}
         >
           <span
@@ -94,9 +105,17 @@ export default function StartModeSelector() {
               inset: '-6px',
               border: '1px dashed rgba(255,59,122,0.3)',
               borderRadius: '50%',
-              animation: 'rotate-ring 20s linear infinite reverse',
+              animation: dialogueLocked ? 'none' : 'rotate-ring 20s linear infinite reverse',
             }}
           />
+          {dialogueLocked && (
+            <span className="absolute z-10">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,59,122,0.6)" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+              </svg>
+            </span>
+          )}
           <svg
             width="28"
             height="28"
@@ -104,13 +123,19 @@ export default function StartModeSelector() {
             fill="none"
             stroke="var(--neon-magenta)"
             strokeWidth="2"
-            style={{ filter: 'drop-shadow(0 0 8px rgba(255,59,122,0.4))' }}
+            style={{
+              filter: 'drop-shadow(0 0 8px rgba(255,59,122,0.4))',
+              opacity: dialogueLocked ? 0.3 : 1,
+            }}
           >
             <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
           </svg>
           <span
             className="text-[9px] font-bold tracking-[3px] text-neon-magenta"
-            style={{ textShadow: '0 0 8px rgba(255,59,122,0.3)' }}
+            style={{
+              textShadow: '0 0 8px rgba(255,59,122,0.3)',
+              opacity: dialogueLocked ? 0.5 : 1,
+            }}
           >
             DIALOGUE
           </span>
@@ -119,46 +144,64 @@ export default function StartModeSelector() {
           AIと対話で思考を深掘り
         </span>
       </div>
-      {showPaywall && (
+
+      {/* Dialogue Lock Modal */}
+      {showDialogueLock && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,14,26,0.9)]">
-          <div
-            className="mx-5 max-w-sm rounded-lg border border-[rgba(0,212,255,0.2)] bg-[#0A0E1A] p-6"
-            style={{ boxShadow: '0 0 40px rgba(0,212,255,0.1)' }}
+          <GlassCard
+            className="mx-5 max-w-sm p-6"
+            variant={feedbackScore !== null && feedbackScore >= 3 ? 'lime' : 'default'}
           >
-            <h3 className="text-sm font-bold tracking-[2px] text-neon-cyan mb-3">
-              無料トライアル終了
-            </h3>
-            <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
-              Standardプラン（月額¥1,480）で、毎月15回の録音・詳細レポート・対話モードが使えます。
-            </p>
-            <div className="flex flex-col gap-2 mb-5">
-              <div className="flex items-center gap-2">
-                <span className="text-neon-lime text-xs">&#10003;</span>
-                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">月15回の録音セッション</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-neon-lime text-xs">&#10003;</span>
-                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">詳細分析レポート・アクション提案</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-neon-lime text-xs">&#10003;</span>
-                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">AI対話モード</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-neon-lime text-xs">&#10003;</span>
-                <span className="text-[10px] text-hud-white opacity-60 tracking-wide">レポート永久保存</span>
-              </div>
-            </div>
-            <p className="text-[9px] text-neon-cyan opacity-50 tracking-[1px] text-center mb-4">
-              近日公開
-            </p>
+            {feedbackScore !== null && feedbackScore >= 3 ? (
+              <>
+                <h3
+                  className="text-sm font-bold tracking-[2px] mb-3"
+                  style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
+                >
+                  Standard プラン
+                </h3>
+                <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
+                  対話モードを含む全機能をお使いいただけます。
+                </p>
+                <div className="flex flex-col gap-2 mb-5">
+                  {[
+                    '月15回の録音セッション',
+                    '詳細分析レポート・アクション提案',
+                    'AI対話モード',
+                    'レポート永久保存',
+                  ].map((feature, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-neon-lime text-xs">&#10003;</span>
+                      <span className="text-[10px] text-hud-white opacity-60 tracking-wide">{feature}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-baseline justify-between mb-4">
+                  <span className="text-lg font-bold text-hud-white">
+                    ¥1,480 <span className="text-[10px] text-hud-white-dim">/ 月</span>
+                  </span>
+                </div>
+                <p className="text-[9px] text-neon-lime opacity-50 tracking-[1px] text-center mb-4">
+                  近日公開
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-sm font-bold tracking-[2px] text-hud-white mb-3">
+                  対話モード
+                </h3>
+                <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
+                  対話モードは有料プランでご利用いただけます。今後のアップデートをお待ちください。
+                </p>
+              </>
+            )}
             <button
-              onClick={() => setShowPaywall(false)}
+              onClick={() => setShowDialogueLock(false)}
               className="w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(232,237,245,0.15)] rounded py-2 cursor-pointer"
             >
               閉じる
             </button>
-          </div>
+          </GlassCard>
         </div>
       )}
     </div>

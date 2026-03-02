@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSession, uploadAudio, transcribe, generateReport } from '@/lib/api';
-import { incrementFreeSessionsUsed } from '@/lib/session-tracker';
+import { incrementFreeSessionsUsed, isTrialExhausted, getUserPlan } from '@/lib/session-tracker';
 
 type StepStatus = 'pending' | 'active' | 'done' | 'error';
 
@@ -58,9 +58,12 @@ export default function ProcessingPage() {
 
         // Step 4: Generate report
         updateStep(3, 'active');
-        await generateReport(session.id);
+        const plan = getUserPlan();
+        await generateReport(session.id, plan === 'standard' ? 'paid' : 'free');
         updateStep(3, 'done');
-        incrementFreeSessionsUsed();
+        if (!isTrialExhausted()) {
+          incrementFreeSessionsUsed();
+        }
 
         // Navigate to results
         setTimeout(() => {

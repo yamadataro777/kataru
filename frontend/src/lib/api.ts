@@ -89,6 +89,20 @@ export async function generateReport(sessionId: string, plan?: 'free' | 'paid'):
   });
 }
 
+// === Feedback API ===
+
+export async function submitFeedback(data: {
+  score: number;
+  comment?: string;
+  suggestion?: string;
+  device_id?: string;
+}): Promise<unknown> {
+  return request('/api/feedback', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // === Conversation API ===
 
 export async function createConversation(): Promise<{ conversation: Conversation; turn: { ai_response: string } }> {

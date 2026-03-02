@@ -6,6 +6,7 @@ import transcribeRouter from './routes/transcribe';
 import reportRouter from './routes/report';
 import analyticsRouter from './routes/analytics';
 import conversationsRouter from './routes/conversations';
+import feedbackRouter from './routes/feedback';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,6 +19,7 @@ app.use('/api/transcribe', transcribeRouter);
 app.use('/api/report', reportRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/conversations', conversationsRouter);
+app.use('/api/feedback', feedbackRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
