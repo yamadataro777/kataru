@@ -1,13 +1,82 @@
 'use client';
 
+import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
 import HudCorners from '@/components/ui/HudCorners';
 import { LP, CONTRASTS, CHATGPT_COMPARISON } from '@/lib/marketing-copy';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const HEALTH_FAST_TIMEOUT = 3000; // 3秒以内ならすぐ遷移
+
+type ModalState = 'hidden' | 'checking' | 'waking' | 'waitlist-form';
+
 export default function LandingPage() {
   const router = useRouter();
+  const [modalState, setModalState] = useState<ModalState>('hidden');
+  const [email, setEmail] = useState('');
+  const [waitlistDone, setWaitlistDone] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleCTA = useCallback(async () => {
+    // Fast health check — if server responds quickly, go straight to app
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setModalState('checking');
+
+    const timeout = setTimeout(() => {
+      // Server is slow (probably sleeping) — show waking modal
+      setModalState('waking');
+    }, HEALTH_FAST_TIMEOUT);
+
+    try {
+      const res = await fetch(`${API_URL}/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) {
+        setModalState('hidden');
+        router.push('/');
+        return;
+      }
+    } catch {
+      clearTimeout(timeout);
+    }
+
+    // If we're still in 'checking', switch to waking (fetch failed instantly)
+    setModalState((prev) => (prev === 'checking' ? 'waking' : prev));
+
+    // Keep polling in background — auto-redirect when server is up
+    const poll = async () => {
+      for (let i = 0; i < 20; i++) {
+        if (controller.signal.aborted) return;
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          const r = await fetch(`${API_URL}/health`, { signal: controller.signal });
+          if (r.ok) {
+            setModalState('hidden');
+            router.push('/');
+            return;
+          }
+        } catch { /* keep trying */ }
+      }
+    };
+    poll();
+  }, [router]);
+
+  const closeModal = () => {
+    abortRef.current?.abort();
+    setModalState('hidden');
+  };
+
+  const handleWaitlistSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // For now, just store in localStorage — later integrate with email service
+    const existing = JSON.parse(localStorage.getItem('kataru_waitlist') || '[]');
+    existing.push({ email, timestamp: new Date().toISOString() });
+    localStorage.setItem('kataru_waitlist', JSON.stringify(existing));
+    setWaitlistDone(true);
+  };
 
   return (
     <div className="flex flex-col min-h-dvh">
@@ -60,7 +129,7 @@ export default function LandingPage() {
 
           {/* CTA */}
           <div className="mt-6">
-            <NeonButton variant="cyan" onClick={() => router.push('/')}>
+            <NeonButton variant="cyan" onClick={handleCTA}>
               {LP.cta.primary}
             </NeonButton>
           </div>
@@ -398,12 +467,12 @@ export default function LandingPage() {
               {LP.closing.sub}
             </p>
             <div className="mt-6 flex justify-center">
-              <NeonButton variant="cyan" onClick={() => router.push('/')}>
+              <NeonButton variant="cyan" onClick={handleCTA}>
                 {LP.cta.primary}
               </NeonButton>
             </div>
             <button
-              onClick={() => router.push('/')}
+              onClick={handleCTA}
               className="mt-3 text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border-0 cursor-pointer hover:text-neon-cyan transition-colors"
             >
               {LP.cta.secondary}
@@ -411,6 +480,135 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ── Server Wake / Waitlist Modal ── */}
+      {modalState !== 'hidden' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-5"
+          style={{ background: 'rgba(10,14,26,0.85)', backdropFilter: 'blur(8px)' }}
+        >
+          <div
+            className="w-full max-w-[350px] rounded-xl p-6 relative"
+            style={{
+              background: 'rgba(10,14,26,0.95)',
+              border: '1px solid rgba(0,212,255,0.2)',
+              boxShadow: '0 0 40px rgba(0,212,255,0.1)',
+            }}
+          >
+            {/* Close button */}
+            <button
+              onClick={closeModal}
+              className="absolute top-3 right-3 text-hud-white-dim opacity-50 hover:opacity-100 bg-transparent border-0 cursor-pointer text-lg"
+            >
+              ✕
+            </button>
+
+            {modalState === 'checking' && (
+              <div className="text-center py-4">
+                <div
+                  className="w-8 h-8 rounded-full border-2 border-neon-cyan border-t-transparent mx-auto mb-4"
+                  style={{ animation: 'spin 1s linear infinite' }}
+                />
+                <p className="text-sm text-hud-white tracking-wider">接続中...</p>
+              </div>
+            )}
+
+            {modalState === 'waking' && (
+              <div className="text-center">
+                <div
+                  className="w-10 h-10 rounded-full border-2 border-neon-cyan border-t-transparent mx-auto mb-4"
+                  style={{ animation: 'spin 1s linear infinite' }}
+                />
+                <h3 className="text-sm font-bold text-neon-cyan tracking-wider mb-2">
+                  サーバー起動中...
+                </h3>
+                <p className="text-[11px] text-hud-white-dim leading-relaxed tracking-wide mb-6">
+                  無料サーバーのため、初回アクセス時に30〜50秒ほどお待ちいただく場合があります。起動が完了すると自動で画面が切り替わります。
+                </p>
+
+                <div className="hud-line mb-5" />
+
+                <p className="text-[10px] tracking-[2px] uppercase text-neon-cyan opacity-60 mb-3">
+                  または
+                </p>
+
+                <button
+                  onClick={() => setModalState('waitlist-form')}
+                  className="w-full py-3 rounded-lg text-xs font-bold tracking-wider cursor-pointer transition-all"
+                  style={{
+                    background: 'rgba(0,212,255,0.08)',
+                    border: '1px solid rgba(0,212,255,0.3)',
+                    color: 'var(--neon-cyan)',
+                  }}
+                >
+                  ウェイティングリストに登録する
+                </button>
+                <p className="text-[10px] text-hud-white-dim opacity-50 mt-2 tracking-wide">
+                  正式版リリース時にお知らせします
+                </p>
+              </div>
+            )}
+
+            {modalState === 'waitlist-form' && !waitlistDone && (
+              <div>
+                <h3 className="text-sm font-bold text-neon-cyan tracking-wider mb-2">
+                  ウェイティングリスト登録
+                </h3>
+                <p className="text-[11px] text-hud-white-dim leading-relaxed tracking-wide mb-5">
+                  正式版のリリース時にメールでお知らせします。
+                </p>
+                <form onSubmit={handleWaitlistSubmit} className="flex flex-col gap-3">
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="メールアドレス"
+                    className="w-full px-4 py-3 rounded-lg text-xs tracking-wider outline-none"
+                    style={{
+                      background: 'rgba(0,212,255,0.05)',
+                      border: '1px solid rgba(0,212,255,0.2)',
+                      color: 'var(--hud-white)',
+                    }}
+                  />
+                  <NeonButton variant="cyan">
+                    登録する
+                  </NeonButton>
+                </form>
+                <button
+                  onClick={() => setModalState('waking')}
+                  className="mt-3 text-[10px] text-hud-white-dim opacity-50 bg-transparent border-0 cursor-pointer hover:opacity-100 transition-opacity w-full text-center"
+                >
+                  ← 戻る
+                </button>
+              </div>
+            )}
+
+            {modalState === 'waitlist-form' && waitlistDone && (
+              <div className="text-center py-4">
+                <div
+                  className="text-3xl mb-3"
+                  style={{ filter: 'drop-shadow(0 0 10px rgba(0,212,255,0.5))' }}
+                >
+                  ✓
+                </div>
+                <h3 className="text-sm font-bold text-neon-cyan tracking-wider mb-2">
+                  登録完了
+                </h3>
+                <p className="text-[11px] text-hud-white-dim leading-relaxed tracking-wide">
+                  ありがとうございます。正式版リリース時にお知らせします。
+                </p>
+                <button
+                  onClick={closeModal}
+                  className="mt-5 text-[10px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer hover:opacity-80 transition-opacity"
+                >
+                  閉じる
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
