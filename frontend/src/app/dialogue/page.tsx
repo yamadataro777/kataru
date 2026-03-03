@@ -1,47 +1,53 @@
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import useDialogue from '@/hooks/useDialogue';
-import PhaseIndicator from '@/components/dialogue/PhaseIndicator';
-import ConversationThread from '@/components/dialogue/ConversationThread';
-import DialogueRecordButton from '@/components/dialogue/DialogueRecordButton';
-import TurnProcessing from '@/components/dialogue/TurnProcessing';
+import { useCoachingDialogue } from '@/hooks/useCoachingDialogue';
+import { StageProgressBar } from '@/components/coaching/StageProgressBar';
+import { ModeSelector } from '@/components/coaching/ModeSelector';
+import { ModeSwitchSuggestionBanner } from '@/components/coaching/ModeSwitchSuggestionBanner';
+import { AdvanceStageButton } from '@/components/coaching/AdvanceStageButton';
+import { CoachingConversationThread } from '@/components/coaching/CoachingConversationThread';
+import { CoachingRecordButton } from '@/components/coaching/CoachingRecordButton';
+import type { CoachingStage } from '@/types/coaching';
 
 export default function DialoguePage() {
   const router = useRouter();
   const {
-    conversation,
+    conversationId,
+    currentStage,
+    stageMode,
     turns,
-    phase,
-    isLoading,
+    canAdvance,
+    missingRequirements,
+    modeSwitchSuggestion,
+    uiState,
+    error,
     isWaking,
     wakingProgress,
-    isSending,
-    isEnding,
-    error,
-    startConversation,
-    retryStart,
-    retryTurn,
+    stageSummaries,
+    initializeSession,
+    selectMode,
     submitTurn,
+    advanceStage,
+    acceptModeSwitchSuggestion,
+    declineModeSwitchSuggestion,
     endSession,
-  } = useDialogue();
+    retryTurn,
+  } = useCoachingDialogue();
 
-  const [slowLoading, setSlowLoading] = useState(false);
-
+  // Initialize session on mount
   useEffect(() => {
-    startConversation();
-  }, [startConversation]);
+    initializeSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Show "taking longer than expected" after 10s if still loading but not in waking mode
+  // When SESSION_COMPLETE, end session and navigate to results
   useEffect(() => {
-    if (!isLoading || isWaking) {
-      setSlowLoading(false);
-      return;
+    if (uiState === 'SESSION_COMPLETE') {
+      endSession();
     }
-    const timer = setTimeout(() => setSlowLoading(true), 10_000);
-    return () => clearTimeout(timer);
-  }, [isLoading, isWaking]);
+  }, [uiState, endSession]);
 
   const handleRecordingComplete = useCallback(
     (blob: Blob, transcript: string) => {
@@ -50,22 +56,49 @@ export default function DialoguePage() {
     [submitTurn]
   );
 
-  const handleEnd = useCallback(async () => {
-    await endSession();
-    if (conversation) {
-      router.push(`/dialogue/results?id=${conversation.id}`);
-    }
-  }, [endSession, conversation, router]);
+  // Determine which stages are completed
+  const completedStages: CoachingStage[] = (
+    [1, 2, 3, 4] as CoachingStage[]
+  ).filter((s) => s < currentStage && stageSummaries[String(s)]);
 
-  // Auto-end when close phase is reached
-  useEffect(() => {
-    if (phase === 'close' && conversation && conversation.status !== 'ended') {
-      handleEnd();
-    }
-  }, [phase, conversation, handleEnd]);
+  const isProcessing = uiState === 'PROCESSING';
 
-  // Full-screen error state (no conversation yet)
-  if (error && !conversation) {
+  // ─── Server waking state ──────────────────────────────────────────────────
+  if (isWaking) {
+    return (
+      <div className="flex items-center justify-center min-h-dvh">
+        <div className="flex flex-col items-center gap-4 px-6 max-w-xs">
+          <span
+            className="text-xs tracking-[3px] text-[#00D4FF] font-mono"
+            style={{ animation: 'neon-flicker 2s ease infinite' }}
+          >
+            サーバー起動中...
+          </span>
+          <div
+            className="w-48 h-[2px] rounded-full overflow-hidden"
+            style={{ background: 'rgba(0,212,255,0.15)' }}
+          >
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${wakingProgress}%`,
+                background: '#00D4FF',
+                boxShadow: '0 0 8px #00D4FF',
+              }}
+            />
+          </div>
+          <span className="text-[10px] tracking-[1px] text-gray-500 font-mono text-center leading-relaxed">
+            サーバーがスリープ状態から復帰中です。
+            <br />
+            通常30〜60秒かかります。
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Full-screen error (before session created) ───────────────────────────
+  if (error && !conversationId) {
     return (
       <div className="flex items-center justify-center min-h-dvh px-6">
         <div className="flex flex-col items-center gap-6 max-w-xs text-center">
@@ -76,34 +109,30 @@ export default function DialoguePage() {
               background: 'rgba(255,59,122,0.08)',
             }}
           >
-            <span className="text-neon-magenta text-lg">!</span>
+            <span className="text-[#FF3B7A] text-lg font-mono">!</span>
           </div>
           <div className="flex flex-col gap-2">
-            <span className="text-xs tracking-[2px] text-neon-magenta">
-              接続エラー
-            </span>
-            <p className="text-[10px] leading-relaxed text-hud-white-dim">
-              {error}
-            </p>
+            <span className="text-xs tracking-[2px] text-[#FF3B7A] font-mono">接続エラー</span>
+            <p className="text-[10px] leading-relaxed text-gray-500 font-mono">{error}</p>
           </div>
           <div className="flex flex-col gap-3 w-full">
             <button
-              onClick={retryStart}
-              className="text-[10px] tracking-[2px] px-6 py-2.5 rounded cursor-pointer transition-all"
+              onClick={() => initializeSession()}
+              className="text-[10px] tracking-[2px] px-6 py-2.5 rounded cursor-pointer transition-all font-mono"
               style={{
                 border: '1px solid rgba(0,212,255,0.4)',
                 background: 'rgba(0,212,255,0.08)',
-                color: 'var(--neon-cyan)',
+                color: '#00D4FF',
               }}
             >
               再試行
             </button>
             <button
               onClick={() => router.push('/')}
-              className="text-[10px] tracking-[2px] px-6 py-2 rounded cursor-pointer transition-all bg-transparent"
+              className="text-[10px] tracking-[2px] px-6 py-2 rounded cursor-pointer transition-all bg-transparent font-mono"
               style={{
                 border: '1px solid rgba(255,255,255,0.1)',
-                color: 'var(--hud-white-dim)',
+                color: 'rgba(232,237,245,0.5)',
               }}
             >
               ホームに戻る
@@ -114,59 +143,73 @@ export default function DialoguePage() {
     );
   }
 
-  // Loading state with waking / slow loading support
-  if (isLoading) {
+  // ─── Initial loading (PROCESSING before mode select) ─────────────────────
+  if (uiState === 'PROCESSING' && !conversationId) {
     return (
       <div className="flex items-center justify-center min-h-dvh">
         <div className="flex flex-col items-center gap-4 px-6 max-w-xs">
-          {isWaking ? (
-            <>
-              <span
-                className="text-xs tracking-[3px] text-neon-cyan"
-                style={{ animation: 'neon-flicker 2s ease infinite' }}
-              >
-                サーバー起動中...
-              </span>
-              {/* Progress bar */}
-              <div
-                className="w-48 h-[2px] rounded-full overflow-hidden"
-                style={{ background: 'rgba(0,212,255,0.15)' }}
-              >
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${wakingProgress}%`,
-                    background: 'var(--neon-cyan)',
-                    boxShadow: '0 0 8px var(--neon-cyan)',
-                  }}
-                />
-              </div>
-              <span className="text-[10px] tracking-[1px] text-hud-white-dim text-center leading-relaxed">
-                サーバーがスリープ状態から復帰中です。
-                <br />
-                通常30〜60秒かかります。
-              </span>
-            </>
-          ) : (
-            <>
-              <span
-                className="text-xs tracking-[3px] text-neon-cyan"
-                style={{ animation: 'neon-flicker 2s ease infinite' }}
-              >
-                INITIALIZING...
-              </span>
-              <span className="text-[10px] tracking-[2px] text-hud-white-dim">
-                {slowLoading
-                  ? '予想より時間がかかっています...'
-                  : '対話を準備しています'}
-              </span>
-            </>
-          )}
+          <span
+            className="text-xs tracking-[3px] text-[#00D4FF] font-mono"
+            style={{ animation: 'neon-flicker 2s ease infinite' }}
+          >
+            INITIALIZING...
+          </span>
+          <span className="text-[10px] tracking-[2px] text-gray-500 font-mono">
+            セッションを準備しています
+          </span>
         </div>
       </div>
     );
   }
 
+  // ─── Mode selection screen ────────────────────────────────────────────────
+  if (uiState === 'MODE_SELECT') {
+    return (
+      <div className="flex flex-col min-h-dvh">
+        {/* Header */}
+        <div className="flex-shrink-0 px-4 pt-3 pb-1">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              onClick={() => router.push('/')}
+              className="text-[9px] tracking-[2px] text-[#00D4FF] bg-transparent border-0 cursor-pointer flex items-center gap-1 font-mono"
+            >
+              <span>&larr;</span> BACK
+            </button>
+            <div className="flex items-center gap-2">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: '#00D4FF',
+                  boxShadow: '0 0 6px #00D4FF',
+                  animation: 'rec-pulse 2s ease infinite',
+                }}
+              />
+              <span className="text-[9px] tracking-[2px] text-[#00D4FF] font-mono">COACHING</span>
+            </div>
+          </div>
+          <div className="h-[1px]" style={{ background: 'rgba(0,212,255,0.15)' }} />
+        </div>
+
+        {/* Mode selector */}
+        <div className="flex-1 flex items-center justify-center">
+          <ModeSelector
+            onSelectMode={selectMode}
+            selectedMode={stageMode}
+            isLoading={isProcessing}
+          />
+        </div>
+
+        {/* Error inline */}
+        {error && (
+          <div className="px-4 pb-4 text-center">
+            <p className="text-[10px] text-[#FF3B7A] tracking-[1px] font-mono">{error}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Main coaching UI ─────────────────────────────────────────────────────
   return (
     <div className="flex flex-col min-h-dvh">
       {/* Header */}
@@ -174,7 +217,7 @@ export default function DialoguePage() {
         <div className="flex items-center justify-between mb-2">
           <button
             onClick={() => router.push('/')}
-            className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer flex items-center gap-1"
+            className="text-[9px] tracking-[2px] text-[#00D4FF] bg-transparent border-0 cursor-pointer flex items-center gap-1 font-mono"
           >
             <span>&larr;</span> BACK
           </button>
@@ -182,42 +225,56 @@ export default function DialoguePage() {
             <span
               className="w-1.5 h-1.5 rounded-full"
               style={{
-                background: 'var(--neon-magenta)',
-                boxShadow: '0 0 6px var(--neon-magenta)',
+                background: '#FF3B7A',
+                boxShadow: '0 0 6px #FF3B7A',
                 animation: 'rec-pulse 2s ease infinite',
               }}
             />
-            <span className="text-[9px] tracking-[2px] text-neon-magenta">
-              DIALOGUE
+            <span className="text-[9px] tracking-[2px] text-[#FF3B7A] font-mono">
+              STAGE {currentStage} / 4
             </span>
           </div>
         </div>
-        <PhaseIndicator currentPhase={phase} />
-        <div
-          className="h-[1px] mt-1"
-          style={{ background: 'rgba(0,212,255,0.15)' }}
+
+        {/* 4-stage progress bar */}
+        <StageProgressBar
+          currentStage={currentStage}
+          stageMode={stageMode}
+          completedStages={completedStages}
         />
+
+        <div className="h-[1px]" style={{ background: 'rgba(0,212,255,0.15)' }} />
       </div>
 
-      {/* Conversation Thread */}
-      <ConversationThread turns={turns} />
+      {/* Conversation thread */}
+      <CoachingConversationThread
+        turns={turns}
+        isProcessing={isProcessing}
+        currentStage={currentStage}
+      />
 
-      {/* Processing indicator */}
-      <TurnProcessing isVisible={isSending} />
+      {/* Mode switch suggestion banner */}
+      <ModeSwitchSuggestionBanner
+        visible={modeSwitchSuggestion.visible}
+        suggestedMode={modeSwitchSuggestion.suggestedMode}
+        reason={modeSwitchSuggestion.reason}
+        onAccept={acceptModeSwitchSuggestion}
+        onDecline={declineModeSwitchSuggestion}
+      />
 
       {/* Inline error display (mid-conversation) */}
-      {error && (
+      {error && conversationId && (
         <div className="px-4 py-2 flex flex-col items-center gap-2">
-          <p className="text-[10px] text-neon-magenta tracking-[1px] text-center">
+          <p className="text-[10px] text-[#FF3B7A] tracking-[1px] text-center font-mono">
             {error}
           </p>
           <button
             onClick={retryTurn}
-            className="text-[9px] tracking-[2px] px-4 py-1.5 rounded cursor-pointer transition-all"
+            className="text-[9px] tracking-[2px] px-4 py-1.5 rounded cursor-pointer transition-all font-mono"
             style={{
               border: '1px solid rgba(0,212,255,0.3)',
               background: 'rgba(0,212,255,0.06)',
-              color: 'var(--neon-cyan)',
+              color: '#00D4FF',
             }}
           >
             再試行
@@ -225,29 +282,28 @@ export default function DialoguePage() {
         </div>
       )}
 
-      {/* Bottom Controls */}
-      <div className="flex-shrink-0 border-t border-[rgba(0,212,255,0.1)]">
-        <DialogueRecordButton
-          onRecordingComplete={handleRecordingComplete}
-          disabled={isSending || isEnding}
-        />
-
-        {conversation && conversation.turn_count >= 5 && (
-          <div className="flex justify-center pb-4 px-4">
-            <button
-              onClick={handleEnd}
-              disabled={isEnding}
-              className="text-[10px] tracking-[2px] px-6 py-2 rounded border cursor-pointer transition-all bg-transparent"
-              style={{
-                borderColor: 'rgba(255,59,122,0.4)',
-                color: 'var(--neon-magenta)',
-                opacity: isEnding ? 0.5 : 1,
-              }}
-            >
-              {isEnding ? 'レポート生成中...' : 'セッションを終了'}
-            </button>
-          </div>
+      {/* Bottom controls */}
+      <div
+        className="flex-shrink-0"
+        style={{ borderTop: '1px solid rgba(0,212,255,0.1)' }}
+      >
+        {/* Advance stage button */}
+        {(uiState === 'RECORDING' || uiState === 'PROCESSING') && (
+          <AdvanceStageButton
+            canAdvance={canAdvance}
+            currentStage={currentStage}
+            missingRequirements={missingRequirements}
+            onAdvance={advanceStage}
+            disabled={isProcessing}
+          />
         )}
+
+        {/* Record button */}
+        <CoachingRecordButton
+          onRecordingComplete={handleRecordingComplete}
+          disabled={isProcessing}
+          stageMode={stageMode}
+        />
       </div>
     </div>
   );

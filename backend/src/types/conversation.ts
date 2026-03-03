@@ -141,3 +141,118 @@ export const CRISIS_KEYWORDS = [
   '死にたい', '自殺', '殺したい', '消えたい',
   '生きていたくない', '死んでしまいたい', '自傷',
 ];
+
+// ==========================================
+// COACHING SYSTEM TYPES (4-Stage Flow)
+// ==========================================
+
+export type CoachingStage = 1 | 2 | 3 | 4;
+export type StageMode = 'logical' | 'emotional';
+
+export interface Stage1LogicalData {
+  central_problem: string | null;
+  current_situation: string | null;
+  key_factors: string[];
+  constraints: string[];
+  uncertainty_points: string[];
+  decision_needed: string | null;
+  priority_candidates: string[];
+}
+
+export interface Stage1EmotionalData {
+  primary_emotions: string[];
+  emotional_triggers: string[];
+  inner_conflicts: string[];
+  unmet_needs: string[];
+  desired_emotional_state: string | null;
+  resistance_points: string[];
+}
+
+export interface Stage2Data {
+  goal_type: 'quantitative' | 'qualitative' | null;
+  goal_statement: string | null;
+  metric: string | null;
+  target_value: string | null;
+  deadline: string | null;
+  observable_signs: string[];
+  why_this_goal_matters: string | null;
+  previous_stage_mode: 'logical' | 'emotional' | null;
+}
+
+export interface Stage3Data {
+  action_candidates: string[];
+  selected_action: string | null;
+  budget: string | null;
+  available_time: string | null;
+  resources: string[];
+  obstacles: string[];
+  obstacles_acknowledged: boolean;
+  first_step: string | null;
+  execution_frequency: string | null;
+}
+
+export interface Stage4Data {
+  commitment_statement: string | null;
+  self_efficacy_level: number | null;
+  perceived_resistance: string | null;
+  identity_alignment: string | null;
+  reinforcement_message: string | null;
+  next_check_in_point: string | null;
+}
+
+export type StageExtractedData = Stage1LogicalData | Stage1EmotionalData | Stage2Data | Stage3Data | Stage4Data;
+
+export interface CoachingTurnResponse {
+  current_stage: CoachingStage;
+  current_stage_mode: StageMode | null;
+  assistant_message: string;
+  can_advance: boolean;
+  advance_reason: string | null;
+  missing_requirements: string[];
+  stage_summary: string;
+  extracted_data: StageExtractedData;
+  confidence: number;
+  should_regress_stage: boolean;
+  regress_to_stage: 1 | 2 | 3 | null;
+  regress_reason: string | null;
+  should_suggest_mode_switch: boolean;
+  suggested_mode: StageMode | null;
+  mode_switch_reason: string | null;
+}
+
+export interface CoachingConversation {
+  id: string;
+  status: ConversationStatus;
+  current_stage: CoachingStage;
+  stage_mode: StageMode | null;
+  stage_summaries: Record<string, string>;
+  stage_extracted_data: Record<string, StageExtractedData | null>;
+  can_advance: boolean;
+  turn_count: number;
+  final_report: ConversationReport | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CoachingTurn {
+  id: string;
+  conversation_id: string;
+  turn_number: number;
+  user_transcript: string | null;
+  audio_url: string | null;
+  ai_response: string;
+  current_stage: CoachingStage;
+  stage_mode: StageMode | null;
+  coaching_response: CoachingTurnResponse | null;
+  created_at: string;
+}
+
+export interface CoachingContext {
+  conversationId: string;
+  currentStage: CoachingStage;
+  stageMode: StageMode | null;
+  turnCount: number;
+  stageSummaries: Record<string, string>;
+  stageExtractedData: Record<string, StageExtractedData | null>;
+  recentTurns: CoachingTurn[];
+}

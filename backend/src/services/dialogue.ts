@@ -52,6 +52,28 @@ const DEFAULT_EXTRACTED: ExtractedFeatures = {
   turn_summary: '',
 };
 
+function normalizeExtracted(raw: unknown): ExtractedFeatures {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    ...DEFAULT_EXTRACTED,
+    ...(typeof r.emotional_tone === 'string' && { emotional_tone: r.emotional_tone }),
+    ...(typeof r.goal === 'string' && r.goal && { goal: r.goal }),
+    ...(typeof r.pain === 'string' && r.pain && { pain: r.pain }),
+    ...(typeof r.conflict === 'string' && r.conflict && { conflict: r.conflict }),
+    ...(typeof r.belief === 'string' && r.belief && { belief: r.belief }),
+    defense_mechanisms: Array.isArray(r.defense_mechanisms) ? r.defense_mechanisms : [],
+    topics: Array.isArray(r.topics) ? r.topics : [],
+    crisis_signals: Array.isArray(r.crisis_signals) ? r.crisis_signals : [],
+    key_phrases: Array.isArray(r.key_phrases) ? r.key_phrases : [],
+    ...(['abstract', 'concrete', 'mixed'].includes(r.abstraction_level as string)
+      ? { abstraction_level: r.abstraction_level as 'abstract' | 'concrete' | 'mixed' }
+      : {}),
+    ...(typeof r.readiness_for_change === 'number' && { readiness_for_change: r.readiness_for_change }),
+    ...(typeof r.self_awareness_depth === 'number' && { self_awareness_depth: r.self_awareness_depth }),
+    ...(typeof r.turn_summary === 'string' && { turn_summary: r.turn_summary }),
+  };
+}
+
 function getFileExtension(mimeType: string): string {
   if (mimeType.includes('mp4')) return 'mp4';
   if (mimeType.includes('wav')) return 'wav';
@@ -227,7 +249,7 @@ export async function processTurn(
     const extractionResult = await generateContent(
       buildExtractionPrompt(transcript, conversation.running_context)
     );
-    extracted = JSON.parse(extractionResult);
+    extracted = normalizeExtracted(JSON.parse(extractionResult));
   } catch {
     extracted = { ...DEFAULT_EXTRACTED };
   }
