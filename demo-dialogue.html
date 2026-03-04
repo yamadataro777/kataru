@@ -1,0 +1,2212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kataru Dialogue Demo v2</title>
+  <style>
+    :root {
+      --bg: #0A0E1A;
+      --navy-light: #111729;
+      --navy-mid: #1A2038;
+      --cyan: #00D4FF;
+      --cyan-dim: #00D4FF22;
+      --cyan-border: #00D4FF33;
+      --magenta: #FF3B7A;
+      --magenta-dim: #FF3B7A22;
+      --magenta-border: #FF3B7A33;
+      --lime: #A8FF00;
+      --lime-dim: #A8FF0022;
+      --lime-border: #A8FF0033;
+      --amber: #FFB800;
+      --amber-dim: #FFB80022;
+      --text: #E0E8F0;
+      --text-dim: rgba(224,232,240,0.45);
+      --text-mid: rgba(224,232,240,0.7);
+      --glass: rgba(16, 22, 42, 0.88);
+      --glass-border: rgba(0, 212, 255, 0.12);
+      --glow-cyan: 0 0 12px #00D4FF66, 0 0 24px #00D4FF33;
+      --glow-magenta: 0 0 12px #FF3B7A66, 0 0 24px #FF3B7A33;
+      --glow-lime: 0 0 12px #A8FF0066, 0 0 24px #A8FF0033;
+      --glow-amber: 0 0 12px #FFB80066, 0 0 24px #FFB80033;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.05) 2px, rgba(0,0,0,0.05) 4px);
+    }
+
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.2); border-radius: 2px; }
+
+    #app {
+      display: flex;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    .shell {
+      width: 390px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      border-left: 1px solid var(--glass-border);
+      border-right: 1px solid var(--glass-border);
+      position: relative;
+    }
+
+    /* ── API Bar ── */
+    #api-bar {
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--glass-border);
+      background: rgba(10, 14, 26, 0.97);
+    }
+
+    .api-bar-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .api-bar-label {
+      font-size: 8px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--cyan);
+      opacity: 0.7;
+    }
+
+    .api-url-preview {
+      font-size: 10px;
+      color: var(--text-dim);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .api-status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #333;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .api-status-dot.ok { background: var(--lime); box-shadow: 0 0 6px #A8FF0099; }
+    .api-status-dot.error { background: var(--magenta); box-shadow: 0 0 6px #FF3B7A99; }
+    .api-status-dot.checking { background: var(--cyan); box-shadow: 0 0 6px #00D4FF99; animation: blink 0.8s infinite; }
+
+    .api-bar-body { padding: 0 12px 8px; display: flex; gap: 6px; }
+    .api-bar-body.hidden { display: none; }
+
+    .api-url-input {
+      flex: 1;
+      background: rgba(0,212,255,0.04);
+      border: 1px solid var(--glass-border);
+      border-radius: 3px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 11px;
+      padding: 5px 8px;
+      outline: none;
+    }
+    .api-url-input:focus { border-color: var(--cyan); }
+
+    /* ── Header ── */
+    .header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--glass-border);
+      background: var(--glass);
+    }
+
+    .btn-back {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 3px;
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 10px;
+      padding: 3px 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 1px;
+    }
+    .btn-back:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    .header-title {
+      font-size: 10px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--cyan);
+      flex: 1;
+      text-align: center;
+    }
+
+    .stage-dots { display: flex; gap: 5px; align-items: center; }
+
+    .stage-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      border: 1px solid #333;
+      background: transparent;
+      transition: all 0.3s;
+    }
+    .stage-dot.done { background: var(--lime); border-color: var(--lime); box-shadow: 0 0 5px #A8FF0088; }
+    .stage-dot.current { background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 5px #00D4FF88; }
+
+    /* Context toggle button in header */
+    .btn-context-toggle {
+      background: none;
+      border: 1px solid rgba(168,255,0,0.25);
+      border-radius: 3px;
+      color: rgba(168,255,0,0.7);
+      font-family: inherit;
+      font-size: 8px;
+      padding: 3px 7px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .btn-context-toggle:hover,
+    .btn-context-toggle.active { border-color: var(--lime); color: var(--lime); background: var(--lime-dim); }
+
+    .btn-export {
+      background: none;
+      border: 1px solid rgba(255,184,0,0.25);
+      border-radius: 3px;
+      color: rgba(255,184,0,0.7);
+      font-family: inherit;
+      font-size: 8px;
+      padding: 3px 7px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .btn-export:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+
+    /* ── Analysis Status Bar ── */
+    #analysis-bar {
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--glass-border);
+      background: rgba(10,14,26,0.6);
+      display: none;
+    }
+
+    #analysis-bar.visible { display: block; }
+
+    .analysis-bar-inner {
+      display: flex;
+      gap: 6px;
+      padding: 5px 12px;
+      align-items: center;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .analysis-bar-inner::-webkit-scrollbar { display: none; }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 9px;
+      letter-spacing: 1px;
+      white-space: nowrap;
+      border: 1px solid;
+      flex-shrink: 0;
+    }
+
+    .status-chip.emotion-high {
+      border-color: var(--magenta);
+      color: var(--magenta);
+      background: var(--magenta-dim);
+    }
+    .status-chip.emotion-medium {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: var(--amber-dim);
+    }
+    .status-chip.emotion-low {
+      border-color: rgba(255,255,255,0.15);
+      color: var(--text-dim);
+    }
+    .status-chip.ambiguous {
+      border-color: rgba(255,184,0,0.4);
+      color: var(--amber);
+      background: var(--amber-dim);
+    }
+    .status-chip.issue-active {
+      border-color: var(--cyan-border);
+      color: var(--cyan);
+      background: var(--cyan-dim);
+    }
+    .status-chip.validated-ok {
+      border-color: var(--lime-border);
+      color: var(--lime);
+      background: var(--lime-dim);
+    }
+    .status-chip.validated-fail {
+      border-color: var(--magenta-border);
+      color: var(--magenta);
+      background: var(--magenta-dim);
+    }
+    .status-chip.focus {
+      border-color: rgba(168,255,0,0.3);
+      color: rgba(168,255,0,0.8);
+      background: var(--lime-dim);
+    }
+
+    .chip-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ── Screen area ── */
+    #screen-area {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .screen { overflow-y: auto; padding: 16px 12px; flex: 1; }
+
+    /* ── Connect screen ── */
+    .connect-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      text-align: center;
+      min-height: 100%;
+    }
+
+    .logo-text {
+      font-size: 26px;
+      letter-spacing: 10px;
+      text-transform: uppercase;
+      color: var(--cyan);
+      text-shadow: var(--glow-cyan);
+    }
+
+    .logo-sub {
+      font-size: 8px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-top: -12px;
+    }
+
+    .version-badge {
+      display: inline-block;
+      background: rgba(168,255,0,0.08);
+      border: 1px solid var(--lime-border);
+      color: var(--lime);
+      font-size: 8px;
+      letter-spacing: 2px;
+      padding: 3px 10px;
+      border-radius: 10px;
+    }
+
+    .connect-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.8;
+      max-width: 270px;
+    }
+
+    .connect-features {
+      text-align: left;
+      width: 260px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--glass-border);
+      border-radius: 6px;
+      padding: 12px 16px;
+    }
+
+    .connect-features-label {
+      font-size: 8px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 10px;
+      opacity: 0.7;
+    }
+
+    .feature-item {
+      font-size: 10px;
+      color: var(--text-dim);
+      line-height: 1.6;
+      padding-left: 16px;
+      position: relative;
+      margin-bottom: 4px;
+    }
+
+    .feature-item::before {
+      content: '▸';
+      position: absolute;
+      left: 0;
+      color: var(--cyan);
+      opacity: 0.6;
+    }
+
+    .connect-error { font-size: 11px; color: var(--magenta); display: none; }
+    .connect-error.visible { display: block; }
+
+    /* ── Mode select ── */
+    .mode-select-screen {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding-top: 24px;
+    }
+
+    .mode-select-title {
+      font-size: 13px;
+      color: var(--text);
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .mode-select-sub {
+      font-size: 9px;
+      color: var(--text-dim);
+      text-align: center;
+      letter-spacing: 1px;
+    }
+
+    .mode-cards { display: flex; flex-direction: column; gap: 12px; }
+
+    .mode-card {
+      border: 1px solid var(--glass-border);
+      border-radius: 6px;
+      padding: 16px;
+      cursor: pointer;
+      background: rgba(16,22,42,0.5);
+      transition: all 0.25s;
+    }
+
+    .mode-card:hover { border-color: var(--cyan); background: var(--cyan-dim); box-shadow: var(--glow-cyan); }
+    .mode-card.emotional:hover { border-color: var(--magenta); background: var(--magenta-dim); box-shadow: var(--glow-magenta); }
+
+    .mode-card-label {
+      font-size: 8px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .mode-card.logical .mode-card-label { color: var(--cyan); }
+    .mode-card.emotional .mode-card-label { color: var(--magenta); }
+
+    .mode-card-title { font-size: 15px; margin-bottom: 5px; color: var(--text); }
+    .mode-card-desc { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+
+    /* ── Chat ── */
+    .chat-messages {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      padding-bottom: 4px;
+    }
+
+    .message { max-width: 88%; display: flex; flex-direction: column; gap: 3px; }
+    .message.ai { align-self: flex-start; }
+    .message.user { align-self: flex-end; }
+
+    .message-label {
+      font-size: 7px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      opacity: 0.55;
+    }
+    .message.ai .message-label { color: var(--cyan); }
+    .message.user .message-label { color: var(--magenta); text-align: right; }
+
+    .message-bubble {
+      padding: 9px 12px;
+      border-radius: 4px;
+      font-size: 12.5px;
+      line-height: 1.65;
+    }
+    .message.ai .message-bubble {
+      border-left: 2px solid var(--cyan);
+      background: rgba(0,212,255,0.04);
+    }
+    .message.user .message-bubble {
+      border-right: 2px solid var(--magenta);
+      background: rgba(255,59,122,0.04);
+      text-align: right;
+    }
+
+    /* next_to_clarify tag on AI messages */
+    .focus-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 8px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: rgba(168,255,0,0.7);
+      border: 1px solid rgba(168,255,0,0.2);
+      background: rgba(168,255,0,0.06);
+      border-radius: 3px;
+      padding: 2px 6px;
+      margin-top: 2px;
+      cursor: default;
+    }
+
+    /* Utterance analysis toggle on AI messages */
+    .analysis-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      font-size: 8px;
+      color: var(--text-dim);
+      letter-spacing: 1px;
+      user-select: none;
+      margin-top: 2px;
+      width: fit-content;
+    }
+    .analysis-toggle:hover { color: var(--cyan); }
+    .analysis-toggle .arrow { transition: transform 0.2s; }
+    .analysis-toggle.open .arrow { transform: rotate(90deg); }
+
+    .analysis-detail {
+      display: none;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(0,212,255,0.08);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-top: 4px;
+      font-size: 10px;
+    }
+    .analysis-detail.open { display: block; }
+
+    .analysis-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 5px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .analysis-row:last-child { margin-bottom: 0; }
+
+    .analysis-key {
+      font-size: 8px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      min-width: 60px;
+      padding-top: 1px;
+      flex-shrink: 0;
+    }
+
+    .analysis-val { color: var(--text-mid); flex: 1; line-height: 1.5; }
+
+    .mini-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 9px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      border: 1px solid;
+    }
+    .mini-chip.cyan { border-color: var(--cyan-border); color: var(--cyan); background: var(--cyan-dim); }
+    .mini-chip.magenta { border-color: var(--magenta-border); color: var(--magenta); background: var(--magenta-dim); }
+    .mini-chip.amber { border-color: rgba(255,184,0,0.3); color: var(--amber); background: var(--amber-dim); }
+    .mini-chip.lime { border-color: var(--lime-border); color: var(--lime); background: var(--lime-dim); }
+    .mini-chip.dim { border-color: rgba(255,255,255,0.08); color: var(--text-dim); }
+
+    /* Validator override badge */
+    .validator-badge {
+      display: none;
+      font-size: 8px;
+      color: var(--amber);
+      border: 1px solid rgba(255,184,0,0.3);
+      background: rgba(255,184,0,0.08);
+      border-radius: 3px;
+      padding: 2px 6px;
+      letter-spacing: 1px;
+      margin-top: 3px;
+      align-items: center;
+      gap: 4px;
+    }
+    .validator-badge.visible { display: inline-flex; }
+
+    /* Typing indicator */
+    .typing-bubble {
+      align-self: flex-start;
+      max-width: 88%;
+      display: none;
+    }
+    .typing-bubble.visible { display: flex; flex-direction: column; gap: 3px; }
+
+    .typing-dots {
+      display: flex;
+      gap: 5px;
+      padding: 9px 12px;
+      border-left: 2px solid var(--cyan);
+      background: rgba(0,212,255,0.04);
+      border-radius: 4px;
+      align-items: center;
+    }
+    .typing-dots span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--cyan);
+      animation: blink-dot 1.2s infinite;
+      opacity: 0.3;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink-dot {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.85); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
+    /* ── Context panel (alternate view) ── */
+    #context-panel {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    #context-panel.visible { display: flex; flex-direction: column; gap: 12px; }
+
+    .ctx-section {
+      background: rgba(16,22,42,0.5);
+      border: 1px solid var(--glass-border);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .ctx-section-header {
+      padding: 7px 12px;
+      font-size: 8px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .ctx-section-header.cyan { color: var(--cyan); }
+    .ctx-section-header.magenta { color: var(--magenta); }
+    .ctx-section-header.amber { color: var(--amber); }
+    .ctx-section-header.lime { color: var(--lime); }
+
+    .ctx-section-body { padding: 10px 12px; }
+
+    .ctx-empty { font-size: 10px; color: var(--text-dim); font-style: italic; }
+
+    .issue-item {
+      display: flex;
+      gap: 8px;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      align-items: flex-start;
+    }
+    .issue-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+    .issue-id {
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: bold;
+      flex-shrink: 0;
+      border: 1px solid;
+    }
+    .issue-id.active { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
+    .issue-id.inactive { border-color: #333; color: #555; }
+
+    .issue-body { flex: 1; }
+    .issue-desc { font-size: 11px; color: var(--text); line-height: 1.5; }
+    .issue-meta { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+
+    .term-item {
+      display: flex;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      align-items: center;
+    }
+    .term-item:last-child { border-bottom: none; }
+
+    .term-word {
+      font-size: 12px;
+      color: var(--text);
+      flex: 1;
+    }
+    .term-word.unresolved { color: var(--amber); }
+
+    .resolved-badge {
+      font-size: 8px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      border: 1px solid;
+    }
+    .resolved-badge.ok { border-color: var(--lime-border); color: var(--lime); }
+    .resolved-badge.pending { border-color: rgba(255,184,0,0.4); color: var(--amber); }
+
+    .emotion-bar {
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+      margin: 6px 0;
+    }
+    .emotion-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.4s;
+    }
+    .emotion-bar-fill.high { background: var(--magenta); box-shadow: 0 0 6px #FF3B7A88; }
+    .emotion-bar-fill.medium { background: var(--amber); box-shadow: 0 0 6px #FFB80088; }
+    .emotion-bar-fill.low { background: var(--cyan); }
+
+    .emotion-labels {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .emotion-label {
+      font-size: 10px;
+      color: var(--text-mid);
+      padding: 2px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .goal-tree { display: flex; flex-direction: column; gap: 8px; }
+
+    .goal-ultimate {
+      font-size: 11px;
+      color: var(--lime);
+      padding: 6px 10px;
+      border: 1px solid var(--lime-border);
+      border-radius: 4px;
+      background: var(--lime-dim);
+      line-height: 1.4;
+    }
+    .goal-ultimate-label {
+      font-size: 7px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: rgba(168,255,0,0.5);
+      margin-bottom: 3px;
+    }
+
+    .goal-means {
+      font-size: 11px;
+      color: var(--amber);
+      padding: 5px 10px;
+      border: 1px solid rgba(255,184,0,0.2);
+      border-radius: 4px;
+      background: var(--amber-dim);
+      line-height: 1.4;
+    }
+    .goal-means-label {
+      font-size: 7px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: rgba(255,184,0,0.5);
+      margin-bottom: 2px;
+    }
+
+    /* ── Advance area ── */
+    .advance-area {
+      flex-shrink: 0;
+      padding: 8px 12px;
+      border-top: 1px solid var(--glass-border);
+      background: rgba(10,14,26,0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .advance-area.hidden { display: none; }
+
+    .missing-reqs-label {
+      font-size: 8px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+    }
+
+    .missing-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .missing-chip {
+      font-size: 9px;
+      color: var(--magenta);
+      border: 1px solid rgba(255,59,122,0.2);
+      background: rgba(255,59,122,0.06);
+      border-radius: 3px;
+      padding: 2px 7px;
+    }
+
+    /* ── Input area ── */
+    .input-area {
+      flex-shrink: 0;
+      display: flex;
+      gap: 6px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--glass-border);
+      background: var(--glass);
+    }
+
+    .chat-input {
+      flex: 1;
+      background: rgba(0,212,255,0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 3px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12.5px;
+      padding: 7px 9px;
+      outline: none;
+      resize: none;
+      min-height: 36px;
+      max-height: 90px;
+      transition: border-color 0.2s;
+      line-height: 1.5;
+    }
+    .chat-input:focus { border-color: var(--cyan); }
+    .chat-input:disabled { opacity: 0.35; }
+
+    /* Buttons */
+    .btn {
+      border: none;
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 10px;
+      letter-spacing: 1px;
+      cursor: pointer;
+      padding: 7px 12px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--cyan);
+      color: var(--bg);
+      font-weight: bold;
+    }
+    .btn-primary:hover { box-shadow: var(--glow-cyan); }
+    .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; box-shadow: none; }
+
+    .btn-advance {
+      background: transparent;
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      width: 100%;
+      padding: 9px;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .btn-advance:hover:not(:disabled) { background: var(--cyan-dim); box-shadow: var(--glow-cyan); }
+    .btn-advance:disabled { opacity: 0.25; cursor: not-allowed; }
+
+    .btn-end {
+      background: transparent;
+      border: 1px solid var(--lime);
+      color: var(--lime);
+      width: 100%;
+      padding: 9px;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .btn-end:hover:not(:disabled) { background: var(--lime-dim); box-shadow: var(--glow-lime); }
+    .btn-end:disabled { opacity: 0.25; cursor: not-allowed; }
+
+    /* ── Report screen ── */
+    .report-screen { display: flex; flex-direction: column; gap: 14px; }
+
+    .report-header {
+      text-align: center;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--glass-border);
+    }
+
+    .report-header h2 {
+      font-size: 11px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--lime);
+      text-shadow: var(--glow-lime);
+    }
+
+    .report-title { font-size: 14px; color: var(--text); margin-top: 8px; line-height: 1.5; }
+
+    .report-section {
+      background: rgba(16,22,42,0.5);
+      border: 1px solid var(--glass-border);
+      border-radius: 5px;
+      padding: 12px;
+    }
+
+    .report-section-label {
+      font-size: 8px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 8px;
+      opacity: 0.7;
+    }
+
+    .report-summary { font-size: 11px; color: var(--text-dim); line-height: 1.7; }
+
+    .topic-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .topic-chip {
+      background: var(--cyan-dim);
+      border: 1px solid var(--cyan-border);
+      border-radius: 12px;
+      padding: 2px 9px;
+      font-size: 10px;
+      color: var(--cyan);
+    }
+
+    .insight-list, .action-list { display: flex; flex-direction: column; gap: 7px; }
+
+    .insight-item {
+      font-size: 11px;
+      color: var(--text);
+      line-height: 1.6;
+      padding-left: 12px;
+      position: relative;
+    }
+    .insight-item::before { content: '•'; position: absolute; left: 0; color: var(--cyan); }
+
+    .action-item {
+      font-size: 11px;
+      color: var(--text);
+      line-height: 1.6;
+      padding-left: 18px;
+      position: relative;
+    }
+    .action-item::before { content: '□'; position: absolute; left: 0; color: var(--lime); }
+
+    .btn-restart {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text-dim);
+      width: 100%;
+      padding: 9px;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .btn-restart:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(14px);
+      background: var(--navy-mid);
+      border: 1px solid var(--magenta);
+      color: var(--magenta);
+      padding: 7px 16px;
+      border-radius: 3px;
+      font-size: 10px;
+      opacity: 0;
+      transition: all 0.25s;
+      pointer-events: none;
+      z-index: 1000;
+      white-space: nowrap;
+    }
+    #toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="shell">
+
+    <!-- API Bar -->
+    <div id="api-bar">
+      <div class="api-bar-toggle" onclick="toggleApiBar()">
+        <span class="api-bar-label">API</span>
+        <span class="api-url-preview" id="api-url-display">http://localhost:3001</span>
+        <span class="api-status-dot" id="api-status-dot"></span>
+      </div>
+      <div class="api-bar-body hidden" id="api-bar-body">
+        <input class="api-url-input" id="api-url-input" type="text" value="http://localhost:3001" placeholder="http://localhost:3001"/>
+        <button class="btn btn-primary" onclick="applyApiUrl()" style="font-size:9px;padding:5px 9px;">適用</button>
+      </div>
+    </div>
+
+    <!-- Header (hidden on connect screen) -->
+    <div class="header" id="main-header" style="display:none;">
+      <button class="btn-back" id="btn-back" onclick="goBack()">← BACK</button>
+      <span class="header-title" id="header-title">STAGE 1/4</span>
+      <button class="btn-export" id="btn-export" onclick="exportSession()" style="display:none;">EXP</button>
+      <button class="btn-context-toggle" id="btn-context" onclick="toggleContextPanel()" style="display:none;">CTX</button>
+      <div class="stage-dots" id="stage-dots">
+        <div class="stage-dot current" id="dot-1"></div>
+        <div class="stage-dot" id="dot-2"></div>
+        <div class="stage-dot" id="dot-3"></div>
+        <div class="stage-dot" id="dot-4"></div>
+      </div>
+    </div>
+
+    <!-- Analysis Status Bar -->
+    <div id="analysis-bar">
+      <div class="analysis-bar-inner" id="analysis-bar-inner">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Main screen area -->
+    <div id="screen-area"></div>
+
+    <!-- Context Panel (alternate view) -->
+    <div id="context-panel"></div>
+
+    <!-- Advance button area (chat only) -->
+    <div class="advance-area hidden" id="advance-area">
+      <div id="missing-container" style="display:none;">
+        <div class="missing-reqs-label">不足している要素</div>
+        <div class="missing-chips" id="missing-chips"></div>
+      </div>
+      <button class="btn btn-advance" id="btn-advance" onclick="handleAdvance()" disabled>
+        次のセクションへ ▶
+      </button>
+    </div>
+
+    <!-- Input area -->
+    <div class="input-area" id="input-area" style="display:none;">
+      <textarea class="chat-input" id="chat-input" placeholder="メッセージを入力... (Ctrl+Enter 送信)" rows="1"
+        onkeydown="handleInputKeydown(event)"
+        oninput="autoResize(this)"></textarea>
+      <button class="btn btn-primary" id="btn-send" onclick="sendMessage()">送信</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+const state = {
+  apiUrl: 'http://localhost:3001',
+  sessionId: null,
+  stage: 1,
+  mode: null,
+  turns: [],           // { role, text, nextToClarify?, utteranceAnalysis?, validatorOverride? }
+  canAdvance: false,
+  missingRequirements: [],
+  lastExtractedData: null,
+  screen: 'connect',   // connect | mode_select | chat | report
+  apiConnected: false,
+  sending: false,
+  report: null,
+  viewMode: 'chat',    // chat | context
+  // Accumulated utterance analysis state (mirrors backend running_context)
+  accCtx: {
+    all_issues: [],
+    ambiguous_terms: [],
+    emotional_signals: null,
+    goal_hierarchy: { ultimate: null, intermediate: [], means_only: [] },
+    issues_prioritized: false,
+  },
+};
+
+// ── API helpers ────────────────────────────────────────────────────────────────
+async function apiGet(path) {
+  const res = await fetch(state.apiUrl + path);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function apiPost(path, body, isFormData = false) {
+  const opts = { method: 'POST' };
+  if (isFormData) {
+    opts.body = body;
+  } else {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = body ? JSON.stringify(body) : undefined;
+  }
+  const res = await fetch(state.apiUrl + path, opts);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  return json;
+}
+
+// ── Accumulated context merge (mirrors backend mergeUtteranceAnalysisIntoRc) ──
+function mergeUtteranceAnalysis(ua) {
+  if (!ua) return;
+
+  // Issues
+  const existingIds = new Set(state.accCtx.all_issues.map(i => i.id));
+  for (const issue of (ua.issues_detected || [])) {
+    if (!existingIds.has(issue.id)) {
+      state.accCtx.all_issues.push(issue);
+      existingIds.add(issue.id);
+    } else {
+      const idx = state.accCtx.all_issues.findIndex(i => i.id === issue.id);
+      if (idx >= 0) state.accCtx.all_issues[idx] = { ...state.accCtx.all_issues[idx], ...issue };
+    }
+  }
+
+  // Ambiguous terms
+  const termMap = new Map(state.accCtx.ambiguous_terms.map(t => [t.term, t]));
+  for (const term of (ua.ambiguous_terms || [])) {
+    const existing = termMap.get(term.term);
+    if (existing) {
+      if (term.resolved_as) termMap.set(term.term, { ...existing, resolved: true, resolved_as: term.resolved_as });
+    } else {
+      termMap.set(term.term, term);
+    }
+  }
+  state.accCtx.ambiguous_terms = Array.from(termMap.values());
+
+  // Emotional signals
+  if (ua.emotional_signals) {
+    state.accCtx.emotional_signals = ua.emotional_signals;
+  }
+
+  // Goals
+  for (const goal of (ua.goals_mentioned || [])) {
+    if (goal.is_means_not_goal) {
+      if (!state.accCtx.goal_hierarchy.means_only.includes(goal.content)) {
+        state.accCtx.goal_hierarchy.means_only.push(goal.content);
+      }
+    } else {
+      if (!state.accCtx.goal_hierarchy.intermediate.includes(goal.content)) {
+        state.accCtx.goal_hierarchy.intermediate.push(goal.content);
+      }
+    }
+  }
+
+  if (ua.priority_clarified) state.accCtx.issues_prioritized = true;
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 3200);
+}
+
+// ── API Bar ────────────────────────────────────────────────────────────────────
+function toggleApiBar() {
+  document.getElementById('api-bar-body').classList.toggle('hidden');
+}
+
+function applyApiUrl() {
+  const val = document.getElementById('api-url-input').value.trim().replace(/\/$/, '');
+  state.apiUrl = val;
+  document.getElementById('api-url-display').textContent = val;
+  document.getElementById('api-bar-body').classList.add('hidden');
+  checkHealth();
+}
+
+function setDotStatus(status) {
+  document.getElementById('api-status-dot').className = 'api-status-dot ' + status;
+}
+
+async function checkHealth() {
+  setDotStatus('checking');
+  try {
+    const res = await fetch(state.apiUrl + '/health', { signal: AbortSignal.timeout(5000) });
+    setDotStatus(res.ok ? 'ok' : 'error');
+    state.apiConnected = res.ok;
+  } catch {
+    setDotStatus('error');
+    state.apiConnected = false;
+  }
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────────
+function goBack() {
+  if (state.screen === 'mode_select') {
+    resetSessionState();
+    setState({ screen: 'connect', sessionId: null });
+  } else if (state.screen === 'chat') {
+    if (confirm('会話を終了してモード選択に戻りますか？')) {
+      setState({ screen: 'mode_select', stage: 1, mode: null, turns: [], canAdvance: false,
+        missingRequirements: [], viewMode: 'chat' });
+    }
+  } else if (state.screen === 'report') {
+    resetSessionState();
+    setState({ screen: 'connect', sessionId: null, report: null });
+  }
+}
+
+function resetSessionState() {
+  Object.assign(state, {
+    stage: 1, mode: null, turns: [], canAdvance: false, missingRequirements: [],
+    lastExtractedData: null, report: null, viewMode: 'chat',
+    accCtx: {
+      all_issues: [], ambiguous_terms: [], emotional_signals: null,
+      goal_hierarchy: { ultimate: null, intermediate: [], means_only: [] },
+      issues_prioritized: false,
+    },
+  });
+}
+
+function toggleContextPanel() {
+  state.viewMode = state.viewMode === 'chat' ? 'context' : 'chat';
+  renderChatOrContext();
+  renderAnalysisBar();
+  const btn = document.getElementById('btn-context');
+  btn.classList.toggle('active', state.viewMode === 'context');
+}
+
+// ── State + render ─────────────────────────────────────────────────────────────
+function setState(patch) {
+  Object.assign(state, patch);
+  render();
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function render() {
+  const header = document.getElementById('main-header');
+  const analysisBar = document.getElementById('analysis-bar');
+  const advanceArea = document.getElementById('advance-area');
+  const inputArea = document.getElementById('input-area');
+  const screenArea = document.getElementById('screen-area');
+  const ctxPanel = document.getElementById('context-panel');
+  const btnCtx = document.getElementById('btn-context');
+
+  document.getElementById('api-url-display').textContent = state.apiUrl;
+  document.getElementById('api-url-input').value = state.apiUrl;
+
+  if (state.screen === 'connect') {
+    header.style.display = 'none';
+    analysisBar.classList.remove('visible');
+    advanceArea.classList.add('hidden');
+    inputArea.style.display = 'none';
+    ctxPanel.classList.remove('visible');
+    screenArea.style.display = '';
+    screenArea.innerHTML = renderConnect();
+
+  } else if (state.screen === 'mode_select') {
+    header.style.display = 'flex';
+    analysisBar.classList.remove('visible');
+    advanceArea.classList.add('hidden');
+    inputArea.style.display = 'none';
+    ctxPanel.classList.remove('visible');
+    screenArea.style.display = '';
+    document.getElementById('header-title').textContent = 'MODE SELECT';
+    document.getElementById('btn-export').style.display = 'none';
+    btnCtx.style.display = 'none';
+    updateStageDots(0);
+    screenArea.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'screen';
+    div.innerHTML = renderModeSelect();
+    screenArea.appendChild(div);
+
+  } else if (state.screen === 'chat') {
+    header.style.display = 'flex';
+    document.getElementById('header-title').textContent = `STAGE ${state.stage}/4`;
+    document.getElementById('btn-export').style.display = '';
+    btnCtx.style.display = '';
+    btnCtx.classList.toggle('active', state.viewMode === 'context');
+    updateStageDots(state.stage);
+    renderAnalysisBar();
+    renderChatOrContext();
+    updateAdvanceArea();
+    inputArea.style.display = state.viewMode === 'chat' ? 'flex' : 'none';
+
+  } else if (state.screen === 'report') {
+    header.style.display = 'flex';
+    document.getElementById('header-title').textContent = 'REPORT';
+    document.getElementById('btn-export').style.display = '';
+    btnCtx.style.display = 'none';
+    analysisBar.classList.remove('visible');
+    advanceArea.classList.add('hidden');
+    inputArea.style.display = 'none';
+    ctxPanel.classList.remove('visible');
+    screenArea.style.display = '';
+    updateStageDots(5);
+    screenArea.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'screen';
+    div.innerHTML = renderReport();
+    screenArea.appendChild(div);
+  }
+}
+
+function renderChatOrContext() {
+  const screenArea = document.getElementById('screen-area');
+  const ctxPanel = document.getElementById('context-panel');
+
+  if (state.viewMode === 'context') {
+    screenArea.style.display = 'none';
+    ctxPanel.classList.add('visible');
+    renderContextPanel();
+  } else {
+    screenArea.style.display = '';
+    ctxPanel.classList.remove('visible');
+    renderChat(screenArea);
+  }
+}
+
+function updateStageDots(currentStage) {
+  for (let i = 1; i <= 4; i++) {
+    const dot = document.getElementById('dot-' + i);
+    dot.className = 'stage-dot';
+    if (i < currentStage) dot.classList.add('done');
+    else if (i === currentStage) dot.classList.add('current');
+  }
+}
+
+// ── Analysis Status Bar ────────────────────────────────────────────────────────
+function renderAnalysisBar() {
+  const bar = document.getElementById('analysis-bar');
+  const inner = document.getElementById('analysis-bar-inner');
+
+  if (state.screen !== 'chat') {
+    bar.classList.remove('visible');
+    return;
+  }
+
+  bar.classList.add('visible');
+
+  const chips = [];
+  const accCtx = state.accCtx;
+  const lastTurn = state.turns.filter(t => t.role === 'ai').slice(-1)[0];
+
+  // Emotional signal chip
+  if (accCtx.emotional_signals) {
+    const es = accCtx.emotional_signals;
+    const intensityClass = es.intensity === 'high' ? 'emotion-high' : es.intensity === 'medium' ? 'emotion-medium' : 'emotion-low';
+    const intensityLabel = es.intensity === 'high' ? '高感情' : es.intensity === 'medium' ? '中感情' : '低感情';
+    const ackLabel = es.acknowledged ? '受容済' : '未受容';
+    chips.push(`<span class="status-chip ${intensityClass}"><span class="chip-dot"></span>${intensityLabel} · ${ackLabel}</span>`);
+  }
+
+  // Ambiguous terms chip
+  const unresolved = accCtx.ambiguous_terms.filter(t => !t.resolved);
+  if (unresolved.length > 0) {
+    chips.push(`<span class="status-chip ambiguous">⚠ 曖昧語 ${unresolved.length}件</span>`);
+  }
+
+  // Active issue chip
+  const activeIssue = accCtx.all_issues.find(i => i.active);
+  if (activeIssue) {
+    chips.push(`<span class="status-chip issue-active">論点 ${activeIssue.id}: ${escapeHtml(activeIssue.description.slice(0, 14))}…</span>`);
+  }
+
+  // next_to_clarify chip
+  if (lastTurn && lastTurn.nextToClarify) {
+    chips.push(`<span class="status-chip focus">焦点: ${escapeHtml(lastTurn.nextToClarify)}</span>`);
+  }
+
+  // Goal Readiness chip
+  if (lastTurn?.utteranceAnalysis?.goal_readiness) {
+    const gr = lastTurn.utteranceAnalysis.goal_readiness;
+    const grClass = { not_ready: 'emotion-high', approaching: 'ambiguous', ready: 'validated-ok' }[gr] || '';
+    const grLabel = { not_ready: 'NOT READY', approaching: 'APPROACHING', ready: 'READY' }[gr] || gr;
+    chips.push(`<span class="status-chip ${grClass}">Goal: ${grLabel}</span>`);
+  }
+
+  // Validator chip
+  if (lastTurn && lastTurn.validatorOverride) {
+    chips.push(`<span class="status-chip validated-fail">✗ 検証ブロック</span>`);
+  } else if (state.canAdvance) {
+    chips.push(`<span class="status-chip validated-ok">✓ セクション完了</span>`);
+  }
+
+  inner.innerHTML = chips.length > 0
+    ? chips.join('')
+    : '<span style="font-size:9px;color:var(--text-dim);letter-spacing:1px;">発話解析 待機中...</span>';
+}
+
+// ── Context Panel ──────────────────────────────────────────────────────────────
+function renderContextPanel() {
+  const panel = document.getElementById('context-panel');
+  const accCtx = state.accCtx;
+
+  let html = '';
+
+  // Issues section
+  html += `<div class="ctx-section">
+    <div class="ctx-section-header cyan">
+      <span>検出された論点</span>
+      <span>${accCtx.all_issues.length}件</span>
+    </div>
+    <div class="ctx-section-body">`;
+
+  if (accCtx.all_issues.length === 0) {
+    html += '<div class="ctx-empty">まだ論点が検出されていません</div>';
+  } else {
+    for (const issue of accCtx.all_issues) {
+      const typeLabels = { decision: '意思決定', action_blocked: '行動阻害', emotional: '感情', external_constraint: '外部制約' };
+      const urgencyColors = { immediate: 'magenta', near: 'amber', distant: 'dim' };
+      html += `<div class="issue-item">
+        <div class="issue-id ${issue.active ? 'active' : 'inactive'}">${escapeHtml(issue.id)}</div>
+        <div class="issue-body">
+          <div class="issue-desc">${escapeHtml(issue.description)}</div>
+          <div class="issue-meta">
+            <span class="mini-chip ${issue.active ? 'cyan' : 'dim'}">${issue.active ? '● アクティブ' : '○ 待機'}</span>
+            <span class="mini-chip dim">${typeLabels[issue.type] || issue.type}</span>
+            <span class="mini-chip ${urgencyColors[issue.urgency] || 'dim'}">${issue.urgency === 'immediate' ? '今すぐ' : issue.urgency === 'near' ? '近日' : '中長期'}</span>
+          </div>
+        </div>
+      </div>`;
+    }
+  }
+  html += `</div></div>`;
+
+  // Ambiguous terms section
+  html += `<div class="ctx-section">
+    <div class="ctx-section-header amber">
+      <span>曖昧語トラッキング</span>
+      <span>${accCtx.ambiguous_terms.length}件</span>
+    </div>
+    <div class="ctx-section-body">`;
+
+  if (accCtx.ambiguous_terms.length === 0) {
+    html += '<div class="ctx-empty">曖昧語が検出されていません</div>';
+  } else {
+    for (const term of accCtx.ambiguous_terms) {
+      html += `<div class="term-item">
+        <div style="flex:1">
+          <div class="term-word ${term.resolved ? '' : 'unresolved'}">"${escapeHtml(term.term)}"</div>
+          ${term.context ? `<div style="font-size:9px;color:var(--text-dim);margin-top:2px;">${escapeHtml(term.context.slice(0, 50))}</div>` : ''}
+          ${term.resolved_as ? `<div style="font-size:9px;color:var(--lime);margin-top:2px;">→ ${escapeHtml(term.resolved_as)}</div>` : ''}
+        </div>
+        <span class="resolved-badge ${term.resolved ? 'ok' : 'pending'}">${term.resolved ? '解決済' : '未解決'}</span>
+      </div>`;
+    }
+  }
+  html += `</div></div>`;
+
+  // Emotional signals section
+  html += `<div class="ctx-section">
+    <div class="ctx-section-header magenta">
+      <span>感情信号</span>
+    </div>
+    <div class="ctx-section-body">`;
+
+  if (!accCtx.emotional_signals) {
+    html += '<div class="ctx-empty">感情信号が検出されていません</div>';
+  } else {
+    const es = accCtx.emotional_signals;
+    const fillWidth = { high: '100%', medium: '60%', low: '25%' }[es.intensity] || '0%';
+    const intensityJa = { high: '高 (high)', medium: '中 (medium)', low: '低 (low)' }[es.intensity] || es.intensity;
+    html += `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:9px;color:var(--text-dim);">強度</span>
+        <span style="font-size:9px;color:var(--text-mid);">${intensityJa}</span>
+      </div>
+      <div class="emotion-bar"><div class="emotion-bar-fill ${es.intensity}" style="width:${fillWidth}"></div></div>
+      <div style="margin-top:8px;font-size:9px;color:var(--text-dim);margin-bottom:4px;">明示的</div>
+      <div class="emotion-labels">
+        ${es.explicit.length > 0 ? es.explicit.map(e => `<span class="emotion-label">${escapeHtml(e)}</span>`).join('') : '<span style="font-size:10px;color:var(--text-dim);">なし</span>'}
+      </div>
+      <div style="margin-top:8px;font-size:9px;color:var(--text-dim);margin-bottom:4px;">暗示的</div>
+      <div class="emotion-labels">
+        ${es.implicit.length > 0 ? es.implicit.map(e => `<span class="emotion-label">${escapeHtml(e)}</span>`).join('') : '<span style="font-size:10px;color:var(--text-dim);">なし</span>'}
+      </div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:9px;color:var(--text-dim);">AIが受容済み</span>
+        <span style="font-size:9px;color:${es.acknowledged ? 'var(--lime)' : 'var(--magenta)'};">${es.acknowledged ? '✓ はい' : '✗ いいえ'}</span>
+      </div>`;
+  }
+  html += `</div></div>`;
+
+  // Goal hierarchy section
+  html += `<div class="ctx-section">
+    <div class="ctx-section-header lime">
+      <span>目標階層</span>
+    </div>
+    <div class="ctx-section-body">`;
+
+  const gh = accCtx.goal_hierarchy;
+  if (!gh.ultimate && gh.intermediate.length === 0 && gh.means_only.length === 0) {
+    html += '<div class="ctx-empty">目標がまだ語られていません</div>';
+  } else {
+    html += '<div class="goal-tree">';
+    if (gh.ultimate) {
+      html += `<div class="goal-ultimate"><div class="goal-ultimate-label">上位目標 (Ultimate)</div>${escapeHtml(gh.ultimate)}</div>`;
+    }
+    for (const g of gh.intermediate) {
+      html += `<div class="mini-chip cyan" style="font-size:10px;padding:4px 10px;border-radius:4px;display:block;">${escapeHtml(g)}</div>`;
+    }
+    for (const g of gh.means_only) {
+      html += `<div class="goal-means"><div class="goal-means-label">手段 (手目標と誤認)</div>${escapeHtml(g)}</div>`;
+    }
+    html += '</div>';
+  }
+  html += `</div></div>`;
+
+  panel.innerHTML = html;
+}
+
+// ── Connect screen ─────────────────────────────────────────────────────────────
+function renderConnect() {
+  return `<div class="screen"><div class="connect-screen">
+    <div>
+      <div class="logo-text">KATARU</div>
+      <div class="logo-sub">Dialogue Demo</div>
+    </div>
+    <span class="version-badge">v2 · 発話解析レイヤー実装済</span>
+    <p class="connect-desc">発話理解レイヤー（UtteranceAnalysis）と<br>コードサイドバリデーターを搭載した<br>改善版AIコーチのデモです。</p>
+    <div class="connect-features">
+      <div class="connect-features-label">新機能</div>
+      <div class="feature-item">発話解析を質問生成より先に実行</div>
+      <div class="feature-item">感情信号を受容してから情報収集</div>
+      <div class="feature-item">曖昧語（「いい大学」等）を追跡・解決</div>
+      <div class="feature-item">複数論点を分離して優先論点を選択</div>
+      <div class="feature-item">sectionValidatorによるセクション完了保証</div>
+      <div class="feature-item">上位目標確認後にgoal_statementを確定</div>
+    </div>
+    <p id="connect-error" class="connect-error"></p>
+    <button class="btn btn-primary" onclick="handleConnect()" style="width:200px;padding:11px;font-size:12px;letter-spacing:2px;">
+      接続して開始
+    </button>
+  </div></div>`;
+}
+
+async function handleConnect() {
+  const errEl = document.getElementById('connect-error');
+  errEl.classList.remove('visible');
+  setDotStatus('checking');
+  try {
+    const res = await fetch(state.apiUrl + '/health', { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) throw new Error('サーバーが応答しません');
+    setDotStatus('ok');
+    state.apiConnected = true;
+    const session = await apiPost('/api/coaching', null);
+    if (!session.id) throw new Error('セッション作成に失敗しました');
+    setState({ sessionId: session.id, screen: 'mode_select' });
+  } catch (err) {
+    setDotStatus('error');
+    errEl.textContent = '接続失敗: ' + (err.message || 'サーバーに接続できません');
+    errEl.classList.add('visible');
+  }
+}
+
+// ── Mode select ────────────────────────────────────────────────────────────────
+function renderModeSelect() {
+  return `<div class="mode-select-screen">
+    <div>
+      <p class="mode-select-title">どちらのモードで<br>セッションを始めますか？</p>
+      <p class="mode-select-sub" style="margin-top:5px;">Session: ${state.sessionId ? state.sessionId.slice(0,8) : '—'}...</p>
+    </div>
+    <div class="mode-cards">
+      <div class="mode-card logical" onclick="handleModeSelect('logical')">
+        <div class="mode-card-label">Logical Mode</div>
+        <div class="mode-card-title">論理整理</div>
+        <div class="mode-card-desc">問題・状況・論点を構造化して<br>意思決定を明確にします。<br><br>
+          <span style="font-size:9px;color:rgba(0,212,255,0.5);">発話解析で論点を先に分離 → 優先論点を選択 → 順序立てて情報収集</span>
+        </div>
+      </div>
+      <div class="mode-card emotional" onclick="handleModeSelect('emotional')">
+        <div class="mode-card-label">Emotional Mode</div>
+        <div class="mode-card-title">感情整理</div>
+        <div class="mode-card-desc">感情・内的葛藤・ニーズを言語化して<br>なりたい状態を明確にします。<br><br>
+          <span style="font-size:9px;color:rgba(255,59,122,0.5);">高強度感情を先に受容 → きっかけ → 内的引っかかり → なりたい状態</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function handleModeSelect(mode) {
+  state.mode = mode;
+  state.stage = 1;
+  state.turns = [];
+  state.canAdvance = false;
+  state.missingRequirements = [];
+  setState({ screen: 'chat', viewMode: 'chat' });
+  setInputEnabled(false);
+  showTyping(true);
+  try {
+    const resp = await apiPost(`/api/coaching/${state.sessionId}/initial`, { stage: 1, mode });
+    const message = resp.assistant_message || '何でもお話しください。';
+    addAiTurn(message, resp.next_to_clarify, resp.utterance_analysis, false);
+  } catch (err) {
+    addAiTurn('サーバーエラーが発生しました: ' + err.message, null, null, false);
+  } finally {
+    showTyping(false);
+    setInputEnabled(true);
+  }
+}
+
+// ── Chat ───────────────────────────────────────────────────────────────────────
+function renderChat(container) {
+  let msgContainer = container.querySelector('.chat-messages');
+  if (!msgContainer) {
+    container.innerHTML = '';
+    msgContainer = document.createElement('div');
+    msgContainer.className = 'chat-messages';
+    msgContainer.id = 'chat-messages';
+    container.appendChild(msgContainer);
+  }
+
+  msgContainer.innerHTML = '';
+
+  state.turns.forEach((t, idx) => {
+    const div = document.createElement('div');
+    div.className = 'message ' + t.role;
+
+    if (t.role === 'ai') {
+      let extra = '';
+
+      // next_to_clarify tag
+      if (t.nextToClarify) {
+        extra += `<div class="focus-tag">▸ 焦点: ${escapeHtml(t.nextToClarify)}</div>`;
+      }
+
+      // validator override badge
+      if (t.validatorOverride) {
+        extra += `<div class="validator-badge visible">🔒 sectionValidator がブロック</div>`;
+      }
+
+      // utterance analysis toggle
+      if (t.utteranceAnalysis) {
+        const ua = t.utteranceAnalysis;
+        const uaId = 'ua-' + idx;
+        extra += `
+          <div class="analysis-toggle" id="toggle-${uaId}" onclick="toggleAnalysis('${uaId}')">
+            <span class="arrow">▸</span>
+            <span>発話解析</span>
+            ${ua.issues_detected?.length ? `<span class="mini-chip cyan">${ua.issues_detected.length}論点</span>` : ''}
+            ${ua.ambiguous_terms?.filter(t=>!t.resolved).length ? `<span class="mini-chip amber">曖昧語</span>` : ''}
+            ${ua.emotional_signals?.intensity === 'high' ? `<span class="mini-chip magenta">高感情</span>` : ''}
+          </div>
+          <div class="analysis-detail" id="detail-${uaId}">
+            ${renderUtteranceAnalysisDetail(ua)}
+          </div>`;
+      }
+
+      div.innerHTML = `
+        <span class="message-label">AI COACH</span>
+        <div class="message-bubble">${escapeHtml(t.text)}</div>
+        ${extra}
+      `;
+    } else {
+      div.innerHTML = `
+        <span class="message-label">YOU</span>
+        <div class="message-bubble">${escapeHtml(t.text)}</div>
+      `;
+    }
+
+    msgContainer.appendChild(div);
+  });
+
+  // Typing indicator
+  const typingDiv = document.createElement('div');
+  typingDiv.className = 'typing-bubble';
+  typingDiv.id = 'typing-bubble';
+  typingDiv.innerHTML = `
+    <span class="message-label" style="color:var(--cyan);">AI COACH</span>
+    <div class="typing-dots"><span></span><span></span><span></span></div>
+  `;
+  msgContainer.appendChild(typingDiv);
+  scrollToBottom();
+}
+
+function renderUtteranceAnalysisDetail(ua) {
+  if (!ua) return '';
+  let html = '';
+
+  // Issue Frame (NEW)
+  if (ua.issue_frame) {
+    const frameLabels = {
+      decision_conflict: '🔀 AかBか選べない',
+      priority_conflict: '📊 優先順位が決められない',
+      blocked_action: '🚧 行動が阻まれている',
+      multi_issue_selection: '🎯 問題が複数あり絞れない',
+      emotional_overwhelm: '🌊 感情が強すぎる',
+      ambiguity_resolution: '❓ 曖昧語を解決すべき',
+      situation_mapping: '🗺️ 状況の全体像が見えない',
+    };
+    const label = frameLabels[ua.issue_frame] || ua.issue_frame;
+    html += `<div class="analysis-row">
+      <div class="analysis-key">問題枠</div>
+      <div class="analysis-val"><span class="mini-chip cyan">${escapeHtml(label)}</span></div>
+    </div>`;
+  }
+
+  // Issues
+  if (ua.issues_detected?.length > 0) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">論点</div>
+      <div class="analysis-val">${ua.issues_detected.map(i =>
+        `<span class="mini-chip ${i.active ? 'cyan' : 'dim'}">${escapeHtml(i.id)}: ${escapeHtml(i.description.slice(0,20))}</span> `
+      ).join('')}</div>
+    </div>`;
+  }
+
+  // Slot Statuses (NEW)
+  if (ua.slot_statuses && Object.keys(ua.slot_statuses).length > 0) {
+    const statusStyle = { missing: 'magenta', partial: 'amber', filled: 'lime' };
+    const statusIcon = { missing: '○', partial: '◐', filled: '●' };
+    const slots = Object.entries(ua.slot_statuses).map(([slot, info]) => {
+      const color = statusStyle[info.status] || 'dim';
+      const icon = statusIcon[info.status] || '?';
+      const evidence = info.last_evidence ? ` "${escapeHtml(info.last_evidence.slice(0,20))}"` : '';
+      return `<span class="mini-chip ${color}">${icon} ${escapeHtml(slot)}${evidence}</span> `;
+    }).join('');
+    html += `<div class="analysis-row">
+      <div class="analysis-key">スロット</div>
+      <div class="analysis-val" style="flex-wrap:wrap;gap:3px;">${slots}</div>
+    </div>`;
+  }
+
+  // Emotional signals
+  if (ua.emotional_signals) {
+    const es = ua.emotional_signals;
+    const intensityChip = { high: 'magenta', medium: 'amber', low: 'dim' }[es.intensity] || 'dim';
+    const allSignals = [...(es.explicit || []).map(s => `"${s}"`), ...(es.implicit || []).map(s => `(${s})`)].join(', ');
+    html += `<div class="analysis-row">
+      <div class="analysis-key">感情</div>
+      <div class="analysis-val">
+        <span class="mini-chip ${intensityChip}">${es.intensity}</span>
+        ${allSignals ? `<span style="margin-left:4px;">${escapeHtml(allSignals)}</span>` : ''}
+        ${es.acknowledged ? `<span class="mini-chip lime" style="margin-left:4px;">受容済</span>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // Ambiguous terms
+  if (ua.ambiguous_terms?.length > 0) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">曖昧語</div>
+      <div class="analysis-val">${ua.ambiguous_terms.map(t =>
+        `<span class="mini-chip ${t.resolved ? 'lime' : 'amber'}">"${escapeHtml(t.term)}" ${t.resolved ? '✓' : '⚠'}</span> `
+      ).join('')}</div>
+    </div>`;
+  }
+
+  // Goals mentioned
+  if (ua.goals_mentioned?.length > 0) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">目標</div>
+      <div class="analysis-val">${ua.goals_mentioned.map(g =>
+        `<span class="mini-chip ${g.is_means_not_goal ? 'amber' : 'lime'}">${escapeHtml(g.content.slice(0,16))} ${g.is_means_not_goal ? '(手段)' : ''}</span> `
+      ).join('')}</div>
+    </div>`;
+  }
+
+  // Priority clarified
+  if (ua.priority_clarified) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">優先度</div>
+      <div class="analysis-val"><span class="mini-chip lime">✓ 論点優先順位が確定</span></div>
+    </div>`;
+  }
+
+  // Goal Readiness (NEW)
+  if (ua.goal_readiness) {
+    const grColor = { not_ready: 'magenta', approaching: 'amber', ready: 'lime' }[ua.goal_readiness] || 'dim';
+    const grLabel = { not_ready: 'NOT READY', approaching: 'APPROACHING', ready: 'READY' }[ua.goal_readiness] || ua.goal_readiness;
+    html += `<div class="analysis-row">
+      <div class="analysis-key">Goal準備</div>
+      <div class="analysis-val"><span class="mini-chip ${grColor}">${grLabel}</span>
+        ${ua.stage_transition_bias != null ? `<span class="mini-chip dim" style="margin-left:4px;">遷移バイアス: ${ua.stage_transition_bias}/10</span>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // Remaining Gaps for Stage 2 (NEW)
+  if (ua.remaining_gaps_for_stage2?.length > 0) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">残Gap</div>
+      <div class="analysis-val">${ua.remaining_gaps_for_stage2.map(g =>
+        `<span class="mini-chip amber">${escapeHtml(g)}</span> `
+      ).join('')}</div>
+    </div>`;
+  }
+
+  // Question Candidates (NEW)
+  if (ua.question_candidates?.length > 0) {
+    const qcHtml = ua.question_candidates.map((qc, i) => {
+      const isSelected = (i === 0); // 1st is the selected best
+      const border = isSelected ? 'border-left:2px solid var(--cyan);padding-left:6px;' : 'padding-left:8px;';
+      const fnLabel = qc.question_function ? `<span class="mini-chip dim" style="margin-left:4px;">${escapeHtml(qc.question_function)}</span>` : '';
+      return `<div style="${border}margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--text-mid);">${escapeHtml(qc.target_slot)}</span>
+        ${fnLabel}
+        <span class="mini-chip dim" style="margin-left:4px;">文脈:${qc.contextuality} 情報:${qc.information_gain} 遷移:${qc.stage_transition_value ?? '-'}</span>
+        ${qc.anchoring_phrase ? `<span style="font-size:9px;color:var(--amber);margin-left:4px;">⚓"${escapeHtml(qc.anchoring_phrase.slice(0,15))}"</span>` : ''}
+        <div style="font-size:11px;margin-top:1px;">${isSelected ? '▶ ' : ''}${escapeHtml(qc.text.slice(0,50))}</div>
+      </div>`;
+    }).join('');
+    html += `<div class="analysis-row" style="flex-direction:column;">
+      <div class="analysis-key" style="margin-bottom:4px;">質問候補</div>
+      <div class="analysis-val" style="flex-direction:column;">${qcHtml}</div>
+    </div>`;
+  }
+
+  // Question Selection Rationale (NEW)
+  if (ua.question_selection_rationale) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">選択理由</div>
+      <div class="analysis-val" style="font-size:10px;color:var(--text-mid);">${escapeHtml(ua.question_selection_rationale)}</div>
+    </div>`;
+  }
+
+  // Anchoring Phrase (NEW)
+  if (ua.anchoring_phrase) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">⚓ 引用</div>
+      <div class="analysis-val"><span style="color:var(--amber);font-style:italic;">"${escapeHtml(ua.anchoring_phrase)}"</span></div>
+    </div>`;
+  }
+
+  // Do Not Ask Again (NEW)
+  if (ua.do_not_ask_again?.length > 0) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">再質問禁止</div>
+      <div class="analysis-val">${ua.do_not_ask_again.map(s =>
+        `<span class="mini-chip dim" style="text-decoration:line-through;">${escapeHtml(s)}</span> `
+      ).join('')}</div>
+    </div>`;
+  }
+
+  // Answered Slots (NEW)
+  if (ua.answered_slots?.length > 0) {
+    html += `<div class="analysis-row">
+      <div class="analysis-key">回答済</div>
+      <div class="analysis-val">${ua.answered_slots.map(s =>
+        `<span class="mini-chip lime">${escapeHtml(s)}</span> `
+      ).join('')}</div>
+    </div>`;
+  }
+
+  return html || '<span style="font-size:10px;color:var(--text-dim);">解析データなし</span>';
+}
+
+function toggleAnalysis(uaId) {
+  const toggle = document.getElementById('toggle-' + uaId);
+  const detail = document.getElementById('detail-' + uaId);
+  if (!toggle || !detail) return;
+  const isOpen = detail.classList.toggle('open');
+  toggle.classList.toggle('open', isOpen);
+}
+
+function addAiTurn(text, nextToClarify, utteranceAnalysis, validatorOverride) {
+  state.turns.push({ role: 'ai', text, nextToClarify, utteranceAnalysis, validatorOverride });
+
+  const msgContainer = document.getElementById('chat-messages');
+  if (!msgContainer) { render(); return; }
+
+  const idx = state.turns.length - 1;
+  const typing = document.getElementById('typing-bubble');
+  const div = document.createElement('div');
+  div.className = 'message ai';
+
+  let extra = '';
+  if (nextToClarify) {
+    extra += `<div class="focus-tag">▸ 焦点: ${escapeHtml(nextToClarify)}</div>`;
+  }
+  if (validatorOverride) {
+    extra += `<div class="validator-badge visible">🔒 sectionValidator がブロック</div>`;
+  }
+  if (utteranceAnalysis) {
+    const ua = utteranceAnalysis;
+    const uaId = 'ua-' + idx;
+    const frameShort = {
+      decision_conflict: '🔀決定', priority_conflict: '📊優先', blocked_action: '🚧阻害',
+      multi_issue_selection: '🎯複数', emotional_overwhelm: '🌊感情', ambiguity_resolution: '❓曖昧', situation_mapping: '🗺️状況'
+    };
+    const slotCounts = ua.slot_statuses ? Object.values(ua.slot_statuses) : [];
+    const missingCount = slotCounts.filter(s => s.status === 'missing').length;
+    const filledCount = slotCounts.filter(s => s.status === 'filled').length;
+    extra += `
+      <div class="analysis-toggle" id="toggle-${uaId}" onclick="toggleAnalysis('${uaId}')">
+        <span class="arrow">▸</span>
+        <span>発話解析</span>
+        ${ua.issue_frame ? `<span class="mini-chip cyan">${frameShort[ua.issue_frame] || ua.issue_frame}</span>` : ''}
+        ${ua.issues_detected?.length ? `<span class="mini-chip cyan">${ua.issues_detected.length}論点</span>` : ''}
+        ${slotCounts.length ? `<span class="mini-chip ${missingCount > 0 ? 'amber' : 'lime'}">${filledCount}/${slotCounts.length}slot</span>` : ''}
+        ${ua.ambiguous_terms?.filter(t=>!t.resolved).length ? `<span class="mini-chip amber">曖昧語</span>` : ''}
+        ${ua.emotional_signals?.intensity === 'high' ? `<span class="mini-chip magenta">高感情</span>` : ''}
+        ${ua.goal_readiness ? `<span class="mini-chip ${{not_ready:'magenta',approaching:'amber',ready:'lime'}[ua.goal_readiness] || 'dim'}">${{not_ready:'NOT READY',approaching:'APPROACHING',ready:'READY'}[ua.goal_readiness]}</span>` : ''}
+      </div>
+      <div class="analysis-detail" id="detail-${uaId}">
+        ${renderUtteranceAnalysisDetail(ua)}
+      </div>`;
+  }
+
+  div.innerHTML = `
+    <span class="message-label">AI COACH</span>
+    <div class="message-bubble">${escapeHtml(text)}</div>
+    ${extra}
+  `;
+  msgContainer.insertBefore(div, typing);
+  scrollToBottom();
+}
+
+function addUserTurn(text) {
+  state.turns.push({ role: 'user', text });
+
+  const msgContainer = document.getElementById('chat-messages');
+  if (!msgContainer) { render(); return; }
+
+  const typing = document.getElementById('typing-bubble');
+  const div = document.createElement('div');
+  div.className = 'message user';
+  div.innerHTML = `
+    <span class="message-label">YOU</span>
+    <div class="message-bubble">${escapeHtml(text)}</div>
+  `;
+  msgContainer.insertBefore(div, typing);
+  scrollToBottom();
+}
+
+function showTyping(visible) {
+  const el = document.getElementById('typing-bubble');
+  if (el) el.className = 'typing-bubble' + (visible ? ' visible' : '');
+}
+
+function scrollToBottom() {
+  const el = document.getElementById('chat-messages');
+  if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+}
+
+function setInputEnabled(enabled) {
+  const input = document.getElementById('chat-input');
+  const btn = document.getElementById('btn-send');
+  if (input) input.disabled = !enabled;
+  if (btn) btn.disabled = !enabled;
+  state.sending = !enabled;
+}
+
+function handleInputKeydown(e) {
+  if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 90) + 'px';
+}
+
+// ── Advance area ───────────────────────────────────────────────────────────────
+function updateAdvanceArea() {
+  const area = document.getElementById('advance-area');
+  const btn = document.getElementById('btn-advance');
+  const missingContainer = document.getElementById('missing-container');
+  const missingChips = document.getElementById('missing-chips');
+
+  if (state.screen !== 'chat') { area.classList.add('hidden'); return; }
+  area.classList.remove('hidden');
+
+  if (state.stage === 4 && state.canAdvance) {
+    btn.textContent = 'セッションを完了する ✓';
+    btn.className = 'btn btn-end';
+    btn.disabled = false;
+    btn.onclick = handleEnd;
+  } else if (state.stage < 4) {
+    btn.textContent = '次のセクションへ ▶';
+    btn.className = 'btn btn-advance';
+    btn.disabled = !state.canAdvance;
+    btn.onclick = handleAdvance;
+  } else {
+    btn.textContent = 'セッションを完了する ✓';
+    btn.className = 'btn btn-end';
+    btn.disabled = true;
+    btn.onclick = handleEnd;
+  }
+
+  if (state.missingRequirements.length > 0) {
+    missingContainer.style.display = '';
+    missingChips.innerHTML = state.missingRequirements
+      .map(r => `<span class="missing-chip">${escapeHtml(r)}</span>`)
+      .join('');
+  } else {
+    missingContainer.style.display = 'none';
+  }
+}
+
+// ── Send message ───────────────────────────────────────────────────────────────
+async function sendMessage() {
+  if (state.sending) return;
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+
+  addUserTurn(text);
+  setInputEnabled(false);
+  showTyping(true);
+  scrollToBottom();
+
+  try {
+    const fd = new FormData();
+    fd.append('transcript', text);
+    fd.append('stage', String(state.stage));
+    if (state.mode) fd.append('mode', state.mode);
+
+    const data = await apiPost(`/api/coaching/${state.sessionId}/turns`, fd, true);
+    const response = data.response;
+
+    if (response) {
+      const aiMsg = response.assistant_message || 'なるほど、もう少し教えていただけますか？';
+      const ua = response.utterance_analysis || null;
+      const ntc = response.next_to_clarify || null;
+
+      // Propagate top-level goal_readiness into utterance_analysis for display
+      if (response.goal_readiness && ua) {
+        ua.goal_readiness = ua.goal_readiness || response.goal_readiness;
+      }
+
+      // Merge utterance analysis into accumulated context
+      mergeUtteranceAnalysis(ua);
+
+      // Detect validator override (LLM wanted to advance but validator blocked)
+      const validatorOverride = false; // We can't detect this from client side directly
+      // (The backend has already applied the override; can_advance in response is final)
+
+      addAiTurn(aiMsg, ntc, ua, validatorOverride);
+
+      state.canAdvance = !!response.can_advance;
+      state.missingRequirements = Array.isArray(response.missing_requirements)
+        ? response.missing_requirements : [];
+      state.lastExtractedData = response.extracted_data || null;
+
+      // Update context panel if open
+      if (state.viewMode === 'context') renderContextPanel();
+    } else {
+      addAiTurn('なるほど。もう少し聞かせていただけますか？', null, null, false);
+    }
+  } catch (err) {
+    addAiTurn('エラーが発生しました: ' + err.message, null, null, false);
+  } finally {
+    showTyping(false);
+    setInputEnabled(true);
+    updateAdvanceArea();
+    renderAnalysisBar();
+    scrollToBottom();
+    document.getElementById('chat-input')?.focus();
+  }
+}
+
+// ── Advance / End ──────────────────────────────────────────────────────────────
+async function handleAdvance() {
+  if (!state.canAdvance) {
+    showToast(state.missingRequirements.length > 0
+      ? 'まだ必要: ' + state.missingRequirements[0]
+      : 'まだ次のステージに進めません');
+    return;
+  }
+
+  const nextStage = state.stage + 1;
+  setInputEnabled(false);
+  showTyping(true);
+
+  try {
+    const resp = await apiPost(`/api/coaching/${state.sessionId}/advance`, {
+      nextStage,
+      extractedData: state.lastExtractedData,
+    });
+
+    state.stage = nextStage;
+    state.canAdvance = false;
+    state.missingRequirements = [];
+
+    document.getElementById('header-title').textContent = `STAGE ${state.stage}/4`;
+    updateStageDots(state.stage);
+
+    const aiMsg = resp.assistant_message || '次のステージに進みます。';
+    const ntc = resp.next_to_clarify || null;
+    addAiTurn(aiMsg, ntc, null, false);
+  } catch (err) {
+    showToast('エラー: ' + err.message);
+  } finally {
+    showTyping(false);
+    setInputEnabled(true);
+    updateAdvanceArea();
+    renderAnalysisBar();
+    scrollToBottom();
+  }
+}
+
+async function handleEnd() {
+  if (!state.canAdvance && state.stage === 4) {
+    showToast('まだセッションを完了できません');
+    return;
+  }
+  setInputEnabled(false);
+  document.getElementById('btn-advance').disabled = true;
+  showTyping(true);
+  try {
+    const data = await apiPost(`/api/coaching/${state.sessionId}/end`, null);
+    state.report = data.report;
+    showTyping(false);
+    setState({ screen: 'report' });
+  } catch (err) {
+    showTyping(false);
+    showToast('レポート生成エラー: ' + err.message);
+    setInputEnabled(true);
+    document.getElementById('btn-advance').disabled = false;
+  }
+}
+
+// ── Report ─────────────────────────────────────────────────────────────────────
+function renderReport() {
+  const r = state.report;
+  if (!r) return '<div style="padding:20px;color:var(--text-dim)">レポートデータがありません</div>';
+
+  const title = r.title || 'コーチングレポート';
+  const summary = r.summary || '';
+  const topics = Array.isArray(r.topics) ? r.topics : [];
+  const insights = Array.isArray(r.key_insights) ? r.key_insights : [];
+  const actions = Array.isArray(r.action_items) ? r.action_items : [];
+
+  return `<div class="report-screen">
+    <div class="report-header">
+      <h2>コーチングレポート</h2>
+      ${title ? `<div class="report-title">${escapeHtml(title)}</div>` : ''}
+    </div>
+    ${summary ? `<div class="report-section">
+      <div class="report-section-label">サマリー</div>
+      <p class="report-summary">${escapeHtml(summary)}</p>
+    </div>` : ''}
+    ${topics.length ? `<div class="report-section">
+      <div class="report-section-label">トピック</div>
+      <div class="topic-chips">${topics.map(t => `<span class="topic-chip">${escapeHtml(String(t))}</span>`).join('')}</div>
+    </div>` : ''}
+    ${insights.length ? `<div class="report-section">
+      <div class="report-section-label">主要なインサイト</div>
+      <div class="insight-list">${insights.map(i => `<div class="insight-item">${escapeHtml(String(i))}</div>`).join('')}</div>
+    </div>` : ''}
+    ${actions.length ? `<div class="report-section">
+      <div class="report-section-label">アクションアイテム</div>
+      <div class="action-list">${actions.map(a => `<div class="action-item">${escapeHtml(String(typeof a === 'object' ? (a.action || a.title || JSON.stringify(a)) : a))}</div>`).join('')}</div>
+    </div>` : ''}
+    ${r.emotional_journey ? `<div class="report-section">
+      <div class="report-section-label">感情の軌跡</div>
+      <p class="report-summary">${escapeHtml(r.emotional_journey)}</p>
+    </div>` : ''}
+    <button class="btn-restart" onclick="handleRestart()">← 最初からやり直す</button>
+  </div>`;
+}
+
+function handleRestart() {
+  resetSessionState();
+  setState({ screen: 'connect', sessionId: null });
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\n/g, '<br>');
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+function exportSession() {
+  if (state.turns.length === 0 && !state.report) {
+    showToast('エクスポートするデータがありません');
+    return;
+  }
+
+  const exportData = {
+    exported_at: new Date().toISOString(),
+    session_id: state.sessionId,
+    mode: state.mode,
+    final_stage: state.stage,
+    turn_count: state.turns.length,
+    turns: state.turns.map((t, i) => ({
+      index: i,
+      role: t.role,
+      text: t.text,
+      next_to_clarify: t.nextToClarify || null,
+      utterance_analysis: t.utteranceAnalysis || null,
+      validator_override: t.validatorOverride || false,
+    })),
+    last_extracted_data: state.lastExtractedData,
+    accumulated_context: state.accCtx,
+    can_advance: state.canAdvance,
+    missing_requirements: state.missingRequirements,
+    report: state.report,
+  };
+
+  const json = JSON.stringify(exportData, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.download = `kataru-session-${ts}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('セッションデータをエクスポートしました');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+document.getElementById('api-url-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') applyApiUrl();
+});
+
+checkHealth();
+render();
+</script>
+</body>
+</html>

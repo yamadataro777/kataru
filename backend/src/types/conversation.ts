@@ -69,6 +69,13 @@ export interface RunningContext {
   self_awareness_depth: number;
   turn_summaries: string[];
   phase_turns: Record<ConversationPhase, number>;
+  // Coaching system extended fields (optional for backwards compatibility)
+  issues_prioritized?: boolean;
+  active_issue_id?: string | null;
+  all_issues?: IssueItem[];
+  ambiguous_terms?: AmbiguousTerm[];
+  emotional_signals?: EmotionalSignals;
+  goal_hierarchy?: GoalHierarchy;
 }
 
 // === Database Row Types ===
@@ -147,6 +154,99 @@ export const CRISIS_KEYWORDS = [
 // ==========================================
 
 export type CoachingStage = 1 | 2 | 3 | 4;
+
+// --- Issue Frame (Stage 1 の問題分類) ---
+
+export type IssueFrame =
+  | 'decision_conflict'      // AかBか選べない
+  | 'priority_conflict'      // 何を先にやるか決められない
+  | 'blocked_action'         // やりたいが何かに阻まれている
+  | 'multi_issue_selection'  // 問題が複数あり絞れない
+  | 'emotional_overwhelm'    // 感情が強すぎて整理できない
+  | 'ambiguity_resolution'   // 曖昧語を解決すべき
+  | 'situation_mapping';     // 状況の全体像が見えない
+
+// --- Slot Status (スロット充足度) ---
+
+export type SlotStatusLevel = 'missing' | 'partial' | 'filled';
+
+export interface SlotStatus {
+  status: SlotStatusLevel;
+  last_evidence: string | null;  // そのスロットを埋めた直近のユーザー発話断片
+}
+
+// --- Question Candidate (内部候補) ---
+
+export interface QuestionCandidate {
+  text: string;
+  target_slot: string;             // どのスロットを狙うか
+  anchoring_phrase: string | null; // ユーザー発話からの引用
+  contextuality: number;           // 0-10: 文脈追従度
+  information_gain: number;        // 0-10: 不確実性削減度
+  stage_transition_value: number;  // 0-10: Stage 2 への遷移寄与度
+  interrogation_risk: number;      // 0-10: 尋問リスク（高いほど危険）
+  question_function: QuestionFunction;
+}
+
+// --- Utterance Analysis Types ---
+
+export interface IssueItem {
+  id: string;                  // "A", "B", "C"
+  description: string;
+  type: 'decision' | 'action_blocked' | 'emotional' | 'external_constraint';
+  urgency: 'immediate' | 'near' | 'distant';
+  active: boolean;             // 現在フォーカス中か
+}
+
+export interface AmbiguousTerm {
+  term: string;                // "いい大学"
+  context: string;             // 使われた文脈
+  resolved: boolean;
+  resolved_as?: string;        // "QS世界ランキングトップ50"
+}
+
+export interface EmotionalSignals {
+  explicit: string[];          // ["だるい"]
+  implicit: string[];          // ["なかなか手につかない"]
+  intensity: 'low' | 'medium' | 'high';
+  acknowledged: boolean;       // AI が受容済みか
+}
+
+export interface GoalHierarchy {
+  ultimate: string | null;     // L1: スタートアップ創業
+  intermediate: string[];      // L3: トップ50大学入学
+  means_only: string[];        // 目的と誤認された手段
+}
+
+export interface UtteranceAnalysis {
+  issues_detected: IssueItem[];
+  emotional_signals: EmotionalSignals;
+  ambiguous_terms: AmbiguousTerm[];
+  goals_mentioned: Array<{ content: string; is_means_not_goal: boolean }>;
+  priority_clarified: boolean;
+  // Stage 1 enhanced fields
+  issue_frame: IssueFrame | null;
+  slot_statuses: Record<string, SlotStatus> | null;
+  question_candidates: QuestionCandidate[] | null;
+  question_selection_rationale: string | null;
+  hypothesis_statement: string | null;  // このターンで提示する暫定仮説
+  anchoring_phrase: string | null;
+  answered_slots: string[] | null;     // このターンで部分的にでも答えが出たスロット
+  do_not_ask_again: string[] | null;   // 再質問禁止スロット
+  goal_readiness?: GoalReadiness;
+  remaining_gaps_for_stage2?: string[];
+  stage_transition_bias?: number;  // 0-10
+  user_denied_previous?: boolean;  // ユーザーが直前の仮説/質問を否定したか
+  // Transcript normalization (Stage 4)
+  transcript_normalization_confidence?: number | null;
+  normalized_terms?: NormalizedTermEntry[];
+  needs_user_confirmation_for_term?: string | null;
+  // Theory discussion mode
+  theory_topic_detected?: string | null;  // LLM が検出した理論概念名（例: "ニーチェの永劫回帰"）
+}
+export type QuestionFunction = 'clarify_detail' | 'narrow_scope' | 'choose_focus' | 'define_term' | 'summarize_confirm' | 'convergence_check' | 'bridge_to_goal' | 'hypothesis_check';
+export type GoalReadiness = 'not_ready' | 'approaching' | 'ready';
+
 export type StageMode = 'logical' | 'emotional';
 
 export interface Stage1LogicalData {
@@ -191,13 +291,64 @@ export interface Stage3Data {
   execution_frequency: string | null;
 }
 
+export type Stage4Path = 'fast' | 'standard' | 'recovery';
+
+export type IdentityPromptType = 'clarity' | 'relationship_integrity' | 'pride' | 'escape_pattern';
+export type NegativeDeltaCause =
+  | 'action_too_large' | 'commitment_too_heavy' | 'timeline_pressure' | 'reality_shock'
+  | 'comparison_spiral' | 'plan_too_large' | 'social_risk_spike'
+  | null;
+export type NegativeDeltaResponseType = 'quantity_reduce' | 'wording_lighten' | 'timeframe_extend_or_environment_shift' | 'comparison_reframe' | null;
+
+export type RecoverySubpath = 'regress' | 'light_commit' | 'commit' | null;
+export type MedicalSafetySeverity = 'none' | 'moderate' | 'severe' | null;
+export type ReviewAxisType = 'execution_check' | 'goal_approach' | 'obstacle_recurrence';
+export type ClosingSummaryStyle = 'fast' | 'standard' | 'recovery_light_commit' | 'safety_shortened';
+
+export interface NormalizedTermEntry {
+  original: string;
+  normalized: string;
+  confidence: number;
+}
+
 export interface Stage4Data {
+  stage4_path: Stage4Path | null;
+  self_efficacy_level_initial: number | null;
+  self_efficacy_level_final: number | null;
+  self_efficacy_delta: number | null;
   commitment_statement: string | null;
-  self_efficacy_level: number | null;
   perceived_resistance: string | null;
+  resistance_reframe: string | null;
   identity_alignment: string | null;
+  identity_prompt_type: IdentityPromptType | null;
   reinforcement_message: string | null;
   next_check_in_point: string | null;
+  review_axes: string[];
+  should_return_to_stage3: boolean;
+  stage3_resize_hint: string | null;
+  negative_delta_cause: NegativeDeltaCause;
+  negative_delta_response_type: NegativeDeltaResponseType;
+  medical_safety_note: string | null;
+  self_efficacy_level: number | null;  // 後方互換（= initial）
+  // #1 Transcript normalization
+  transcript_normalization_confidence: number | null;
+  normalized_terms: NormalizedTermEntry[];
+  needs_user_confirmation_for_term: string | null;
+  // #2 Recovery light commit
+  recovery_subpath: RecoverySubpath;
+  // #3 Negative delta strengthening
+  negative_delta_occurred: boolean;
+  delta_recovered_to_nonnegative: boolean;
+  requires_priority_followup: boolean;
+  soft_complete: boolean;
+  // #4 Medical safety severity
+  medical_safety_severity: MedicalSafetySeverity;
+  stage4_shortened_for_safety: boolean;
+  // #5 Review axes standardization
+  review_axis_types: ReviewAxisType[];
+  review_axis_quality_score: number | null;
+  // #6 Path-specific closing
+  closing_summary_style: ClosingSummaryStyle | null;
 }
 
 export type StageExtractedData = Stage1LogicalData | Stage1EmotionalData | Stage2Data | Stage3Data | Stage4Data;
@@ -218,6 +369,8 @@ export interface CoachingTurnResponse {
   should_suggest_mode_switch: boolean;
   suggested_mode: StageMode | null;
   mode_switch_reason: string | null;
+  utterance_analysis?: UtteranceAnalysis; // LLMが出力する発話解析
+  goal_readiness?: GoalReadiness;
 }
 
 export interface CoachingConversation {
@@ -255,4 +408,19 @@ export interface CoachingContext {
   stageSummaries: Record<string, string>;
   stageExtractedData: Record<string, StageExtractedData | null>;
   recentTurns: CoachingTurn[];
+  // Extended fields from running_context
+  all_issues?: IssueItem[];
+  ambiguous_terms?: AmbiguousTerm[];
+  emotional_signals?: EmotionalSignals;
+  goal_hierarchy?: GoalHierarchy;
+  issues_prioritized?: boolean;
+  // Stage 1 enhanced fields
+  issue_frame?: IssueFrame | null;
+  slot_statuses?: Record<string, SlotStatus> | null;
+  do_not_ask_again?: string[] | null;
+  goal_readiness?: GoalReadiness;
+  // Theory discussion mode
+  theory_mode_active?: boolean;
+  theory_mode_turn_count?: number;
+  theory_mode_concept?: string | null;
 }

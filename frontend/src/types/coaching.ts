@@ -5,6 +5,70 @@
 // ==========================================
 
 export type CoachingStage = 1 | 2 | 3 | 4;
+
+// --- Utterance Analysis Types (mirrors backend) ---
+
+export interface IssueItem {
+  id: string;
+  description: string;
+  type: 'decision' | 'action_blocked' | 'emotional' | 'external_constraint';
+  urgency: 'immediate' | 'near' | 'distant';
+  active: boolean;
+}
+
+export interface AmbiguousTerm {
+  term: string;
+  context: string;
+  resolved: boolean;
+  resolved_as?: string;
+}
+
+export interface EmotionalSignals {
+  explicit: string[];
+  implicit: string[];
+  intensity: 'low' | 'medium' | 'high';
+  acknowledged: boolean;
+}
+
+export interface GoalHierarchy {
+  ultimate: string | null;
+  intermediate: string[];
+  means_only: string[];
+}
+
+export interface QuestionCandidate {
+  text: string;
+  target_slot: string;
+  anchoring_phrase: string | null;
+  contextuality: number;
+  information_gain: number;
+  stage_transition_value: number;
+  interrogation_risk: number;
+  question_function: QuestionFunction;
+}
+
+export interface UtteranceAnalysis {
+  issues_detected: IssueItem[];
+  emotional_signals: EmotionalSignals;
+  ambiguous_terms: AmbiguousTerm[];
+  goals_mentioned: Array<{ content: string; is_means_not_goal: boolean }>;
+  priority_clarified: boolean;
+  question_candidates?: QuestionCandidate[] | null;
+  hypothesis_statement?: string | null;
+  goal_readiness?: GoalReadiness;
+  remaining_gaps_for_stage2?: string[];
+  stage_transition_bias?: number;
+  user_denied_previous?: boolean;  // ユーザーが直前の仮説/質問を否定したか
+  // Transcript normalization (Stage 4)
+  transcript_normalization_confidence?: number | null;
+  normalized_terms?: NormalizedTermEntry[];
+  needs_user_confirmation_for_term?: string | null;
+  // Theory discussion mode
+  theory_topic_detected?: string | null;  // LLM が検出した理論概念名（例: "ニーチェの永劫回帰"）
+}
+export type QuestionFunction = 'clarify_detail' | 'narrow_scope' | 'choose_focus' | 'define_term' | 'summarize_confirm' | 'convergence_check' | 'bridge_to_goal' | 'hypothesis_check';
+export type GoalReadiness = 'not_ready' | 'approaching' | 'ready';
+
 export type StageMode = 'logical' | 'emotional';
 export type UIState = 'MODE_SELECT' | 'RECORDING' | 'PROCESSING' | 'STAGE_COMPLETE' | 'SESSION_COMPLETE';
 
@@ -50,13 +114,63 @@ export interface Stage3Data {
   execution_frequency: string | null;
 }
 
+export type Stage4Path = 'fast' | 'standard' | 'recovery';
+export type IdentityPromptType = 'clarity' | 'relationship_integrity' | 'pride' | 'escape_pattern';
+export type NegativeDeltaCause =
+  | 'action_too_large' | 'commitment_too_heavy' | 'timeline_pressure' | 'reality_shock'
+  | 'comparison_spiral' | 'plan_too_large' | 'social_risk_spike'
+  | null;
+export type NegativeDeltaResponseType = 'quantity_reduce' | 'wording_lighten' | 'timeframe_extend_or_environment_shift' | 'comparison_reframe' | null;
+
+export type RecoverySubpath = 'regress' | 'light_commit' | 'commit' | null;
+export type MedicalSafetySeverity = 'none' | 'moderate' | 'severe' | null;
+export type ReviewAxisType = 'execution_check' | 'goal_approach' | 'obstacle_recurrence';
+export type ClosingSummaryStyle = 'fast' | 'standard' | 'recovery_light_commit' | 'safety_shortened';
+
+export interface NormalizedTermEntry {
+  original: string;
+  normalized: string;
+  confidence: number;
+}
+
 export interface Stage4Data {
+  stage4_path: Stage4Path | null;
+  self_efficacy_level_initial: number | null;
+  self_efficacy_level_final: number | null;
+  self_efficacy_delta: number | null;
   commitment_statement: string | null;
-  self_efficacy_level: number | null;
   perceived_resistance: string | null;
+  resistance_reframe: string | null;
   identity_alignment: string | null;
+  identity_prompt_type: IdentityPromptType | null;
   reinforcement_message: string | null;
   next_check_in_point: string | null;
+  review_axes: string[];
+  should_return_to_stage3: boolean;
+  stage3_resize_hint: string | null;
+  negative_delta_cause: NegativeDeltaCause;
+  negative_delta_response_type: NegativeDeltaResponseType;
+  medical_safety_note: string | null;
+  self_efficacy_level: number | null;  // 後方互換（= initial）
+  // #1 Transcript normalization
+  transcript_normalization_confidence?: number | null;
+  normalized_terms?: NormalizedTermEntry[];
+  needs_user_confirmation_for_term?: string | null;
+  // #2 Recovery light commit
+  recovery_subpath?: RecoverySubpath;
+  // #3 Negative delta strengthening
+  negative_delta_occurred?: boolean;
+  delta_recovered_to_nonnegative?: boolean;
+  requires_priority_followup?: boolean;
+  soft_complete?: boolean;
+  // #4 Medical safety severity
+  medical_safety_severity?: MedicalSafetySeverity;
+  stage4_shortened_for_safety?: boolean;
+  // #5 Review axes standardization
+  review_axis_types?: ReviewAxisType[];
+  review_axis_quality_score?: number | null;
+  // #6 Path-specific closing
+  closing_summary_style?: ClosingSummaryStyle | null;
 }
 
 export type StageExtractedData =
@@ -82,6 +196,8 @@ export interface CoachingTurnResponse {
   should_suggest_mode_switch: boolean;
   suggested_mode: StageMode | null;
   mode_switch_reason: string | null;
+  utterance_analysis?: UtteranceAnalysis; // LLMが出力する発話解析（デバッグ用）
+  goal_readiness?: GoalReadiness;
 }
 
 export interface CoachingTurn {
@@ -134,76 +250,28 @@ export interface CoachingDialogueState {
 
 // ==========================================
 // GATE VALIDATION (Frontend double-gate)
+// バックエンドが権威。フロントエンドはバックエンドの can_advance を信頼する。
+// missing_requirements はバックエンドから来た詳細理由を優先して表示する。
 // ==========================================
 
 export function canAdvanceFromStage(
-  stage: number,
-  mode: StageMode | null,
-  extractedData: StageExtractedData | null | undefined,
-  confidence: number
+  _stage: number,
+  _mode: StageMode | null,
+  _extractedData: StageExtractedData | null | undefined,
+  _confidence: number,
+  backendCanAdvance?: boolean,
+  backendMissingRequirements?: string[]
 ): { canAdvance: boolean; reasons: string[] } {
-  if (!extractedData) return { canAdvance: false, reasons: ['データが取得できていません'] };
-
-  if (stage === 1 && mode === 'logical') {
-    const d = extractedData as Stage1LogicalData;
-    const reasons: string[] = [];
-    if (!d.central_problem?.trim()) reasons.push('中心となる問題が明確でない');
-    if (!d.current_situation?.trim()) reasons.push('現状認識が不明確');
-    if (d.key_factors.length < 1) reasons.push('主要な論点が挙がっていない');
-    if (!d.decision_needed?.trim()) reasons.push('何を決める必要があるかが不明');
-    if (confidence < 0.7) reasons.push('整理の深度が不十分');
-    return { canAdvance: reasons.length === 0, reasons };
+  // バックエンドの判定が提供されている場合はそちらを権威とする
+  if (backendCanAdvance !== undefined) {
+    return {
+      canAdvance: backendCanAdvance,
+      reasons: backendMissingRequirements ?? [],
+    };
   }
 
-  if (stage === 1 && mode === 'emotional') {
-    const d = extractedData as Stage1EmotionalData;
-    const reasons: string[] = [];
-    if (d.primary_emotions.length < 1) reasons.push('主要な感情が特定できていない');
-    if (d.emotional_triggers.length < 1) reasons.push('感情のきっかけが不明確');
-    if (d.inner_conflicts.length < 1 && d.unmet_needs.length < 1) reasons.push('内的な引っかかりがまだ言語化されていない');
-    if (!d.desired_emotional_state?.trim()) reasons.push('どんな状態になりたいかが不明確');
-    if (confidence < 0.7) reasons.push('感情整理の深度が不十分');
-    return { canAdvance: reasons.length === 0, reasons };
-  }
-
-  if (stage === 2) {
-    const d = extractedData as Stage2Data;
-    const reasons: string[] = [];
-    if (!d.goal_type) reasons.push('目標の種類（定量/定性）が未確定');
-    if (!d.goal_statement?.trim()) reasons.push('目標が言語化されていない');
-    if (d.goal_type === 'quantitative' && !d.metric && !d.deadline)
-      reasons.push('達成指標または期限が必要');
-    if (d.goal_type === 'qualitative' && d.observable_signs.length < 1)
-      reasons.push('達成を観察できる変化が明確でない');
-    if (d.goal_type === 'qualitative' && !d.why_this_goal_matters)
-      reasons.push('この目標の意味・理由が不明確');
-    if (confidence < 0.7) reasons.push('目標の明確度が不十分');
-    return { canAdvance: reasons.length === 0, reasons };
-  }
-
-  if (stage === 3) {
-    const d = extractedData as Stage3Data;
-    const reasons: string[] = [];
-    if (d.action_candidates.length < 1) reasons.push('行動候補が出ていない');
-    if (!d.selected_action?.trim()) reasons.push('実行する行動が決まっていない');
-    if (!d.first_step?.trim()) reasons.push('最初のアクションが不明確');
-    if (!d.obstacles_acknowledged && d.obstacles.length === 0)
-      reasons.push('障害の有無を確認していない');
-    if (confidence < 0.7) reasons.push('行動設計の具体性が不十分');
-    return { canAdvance: reasons.length === 0, reasons };
-  }
-
-  if (stage === 4) {
-    const d = extractedData as Stage4Data;
-    const reasons: string[] = [];
-    if (!d.commitment_statement?.trim()) reasons.push('コミットメント宣言が未完了');
-    if (!d.self_efficacy_level || d.self_efficacy_level < 6)
-      reasons.push('自己効力感がまだ低い（6以上が必要）');
-    if (confidence < 0.8) reasons.push('確定の深度が不十分');
-    return { canAdvance: reasons.length === 0, reasons };
-  }
-
-  return { canAdvance: false, reasons: ['不明なStage'] };
+  // バックエンドの判定が未提供の場合（初期表示など）は false で待機
+  return { canAdvance: false, reasons: [] };
 }
 
 // Parse LLM response with fallback
@@ -245,6 +313,7 @@ export function parseLLMResponse(raw: any, stage: CoachingStage, mode: StageMode
       should_suggest_mode_switch: raw.should_suggest_mode_switch ?? false,
       suggested_mode: raw.suggested_mode ?? null,
       mode_switch_reason: raw.mode_switch_reason ?? null,
+      utterance_analysis: raw.utterance_analysis ?? undefined,
     };
   } catch {
     return fallback;

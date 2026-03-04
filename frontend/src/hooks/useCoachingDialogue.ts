@@ -183,13 +183,15 @@ export function useCoachingDialogue() {
         });
 
         const response = parseLLMResponse(result.response, state.currentStage, state.stageMode);
-        const { canAdvance: frontendCanAdvance } = canAdvanceFromStage(
+        // バックエンドが権威（sectionValidator による上書き済み）
+        const { canAdvance: finalCanAdvance } = canAdvanceFromStage(
           response.current_stage,
           response.current_stage_mode,
           response.extracted_data,
-          response.confidence
+          response.confidence,
+          response.can_advance,
+          response.missing_requirements
         );
-        const finalCanAdvance = response.can_advance && frontendCanAdvance;
 
         const aiTurn: CoachingTurn = {
           id: result.turn?.id || `ai-${Date.now()}`,
