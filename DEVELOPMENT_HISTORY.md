@@ -788,4 +788,80 @@ v2 ストレステスト（10セッション + 音声入力ストレス）は全
    - `v2-improvement-spec.md`: Theory Drift Guard → Theory Discussion Mode に書換
    - `DEVELOPMENT_HISTORY.md`: 変更ログ追記
 
-*このドキュメントは2026年3月4日時点の開発状況を記録したものです。*
+---
+
+## 2026年3月5日: マネタイズ基盤・認証・課金システム導入
+
+### Phase 1: ローンチ基盤
+
+1. **Supabase Auth 導入**
+   - `profiles` テーブル新設（plan, session_count, free_sessions_used, stripe_customer_id）
+   - `sessions`, `coaching_conversations`, `feedback` テーブルに `user_id` カラム追加
+   - RLS ポリシー: ユーザーは自分のデータのみアクセス可能
+   - バックエンド認証ミドルウェア (`requireAuth`, `optionalAuth`) で JWT 検証
+   - フロントエンド `AuthContext` + `AuthGuard` コンポーネント
+   - ログイン/サインアップページ (`/login`)
+   - 全 API リクエストに自動で auth token 付与
+
+2. **セッション管理の DB 移行**
+   - `session-tracker.ts` を localStorage → Supabase クエリベースに書き換え
+   - `FREE_SESSION_LIMIT = 5`（2 → 5 に緩和）
+   - `UserPlan = 'free' | 'lite' | 'standard'` に拡張
+   - バックエンドで `canCreateSession()` による制限チェック
+   - レポートプラン決定もバックエンドで（フロントエンドからの改ざん防止）
+
+3. **Render コールドスタート対策**
+   - ランディングページ読み込み時に `/health` に事前 ping
+
+### Phase 2: 課金基盤
+
+4. **Stripe 連携**
+   - Checkout セッション作成（`/api/stripe/checkout`）
+   - Customer Portal（`/api/stripe/portal`）
+   - Webhook でプラン変更を DB に自動反映
+   - `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted` イベント処理
+
+5. **3段階プラン設計**
+   - Free: ¥0 / 月5回 / 要約レポート / 保存7日
+   - Lite: ¥580/月 / 月15回 / 詳細レポート / 永久保存
+   - Standard: ¥1,480/月 / 無制限 / 詳細レポート / 対話モード / 月次分析 / 永久保存
+   - プライシングページ (`/pricing`) 新設
+
+### Phase 3: 体験最適化
+
+6. **段階的アンロック**
+   - Session 1: Free レポート（intro）
+   - Session 2: Free レポート + 有料機能ティーザー（teaser）
+   - Session 3: 有料レポートフル表示（full_preview）— 1回限定
+   - Session 4: 対話モードプレビュー Stage 1-2（dialogue_preview）— 1回限定
+   - Session 5+: ペイウォール（exhausted）
+   - `getSessionPhase()` 関数で段階を管理
+
+7. **テキスト入力モード追加**
+   - `/record` ページに VOICE / TEXT 切り替えタブ追加
+   - テキスト入力 → 同じ Gemini パイプラインでレポート生成
+   - 声を出せない環境でも Kataru を使用可能に
+   - 50文字以上のバリデーション
+
+### 技術的変更点
+
+- **新規ファイル:**
+  - `backend/src/middleware/auth.ts` — JWT 認証ミドルウェア
+  - `backend/src/services/profile.ts` — ユーザープロファイル管理
+  - `backend/src/services/stripe.ts` — Stripe クライアント
+  - `backend/src/routes/auth.ts` — プロファイル取得 API
+  - `backend/src/routes/stripe.ts` — Checkout/Portal/Webhook API
+  - `backend/src/migrations/003_auth_and_plans.sql` — DB マイグレーション
+  - `frontend/src/contexts/AuthContext.tsx` — 認証コンテキスト
+  - `frontend/src/components/auth/AuthGuard.tsx` — 認証ガード
+  - `frontend/src/app/login/page.tsx` — ログインページ
+  - `frontend/src/app/pricing/page.tsx` — プライシングページ
+
+- **変更ファイル:**
+  - 全バックエンドルートに `requireAuth` ミドルウェア追加
+  - `session-tracker.ts` 完全書き換え（localStorage → DB ベース）
+  - `api.ts` に auth header 自動付与
+  - `layout.tsx` に `AuthProvider` ラッパー追加
+  - `FeedbackClient.tsx` に 3 段階プラン表示
+
+*このドキュメントは2026年3月5日時点の開発状況を記録したものです。*

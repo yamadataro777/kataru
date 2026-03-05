@@ -263,8 +263,8 @@ export class CoachingService {
     this.stage4Handler = handler;
   }
 
-  async createSession(): Promise<CoachingConversation> {
-    const conv = await createConversation();
+  async createSession(userId?: string): Promise<CoachingConversation> {
+    const conv = await createConversation(userId);
     const initialRc = {
       current_stage: 1,
       stage_mode: null,

@@ -1,14 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../services/supabase';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
 // GET / - Get analytics
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
+    const { userId } = req as AuthenticatedRequest;
     const { data: sessions, error } = await supabase
       .from('sessions')
       .select('*')
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;

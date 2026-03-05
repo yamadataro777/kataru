@@ -26,15 +26,18 @@ const DEFAULT_RUNNING_CONTEXT: RunningContext = {
   },
 };
 
-export async function createConversation(): Promise<Conversation> {
+export async function createConversation(userId?: string): Promise<Conversation> {
+  const insertData: Record<string, unknown> = {
+    phase: 'intake',
+    turn_count: 0,
+    status: 'active',
+    running_context: DEFAULT_RUNNING_CONTEXT,
+  };
+  if (userId) insertData.user_id = userId;
+
   const { data, error } = await supabase
     .from('conversations')
-    .insert({
-      phase: 'intake',
-      turn_count: 0,
-      status: 'active',
-      running_context: DEFAULT_RUNNING_CONTEXT,
-    })
+    .insert(insertData)
     .select()
     .single();
 

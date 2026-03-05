@@ -1,12 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../services/supabase';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
 // POST / - Submit feedback
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { score, comment, suggestion, device_id } = req.body;
+    const userId = (req as AuthenticatedRequest).userId || null;
 
     if (!score || score < 1 || score > 5) {
       res.status(400).json({ error: 'Score must be between 1 and 5' });
@@ -20,6 +22,7 @@ router.post('/', async (req: Request, res: Response) => {
         comment: comment || null,
         suggestion: suggestion || null,
         device_id: device_id || null,
+        user_id: userId,
         user_agent: req.headers['user-agent'] || null,
       });
 

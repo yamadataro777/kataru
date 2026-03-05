@@ -1,16 +1,19 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { coachingService } from '../services/coaching';
-import { getConversations, getConversationWithTurns } from '../services/conversation';
+import { getConversationWithTurns } from '../services/conversation';
+import { supabase } from '../services/supabase';
 import type { CoachingStage, StageMode } from '../types/conversation';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // POST /api/coaching - Create new coaching session
-router.post('/', async (_req: Request, res: Response) => {
+router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
-    const conversation = await coachingService.createSession();
+    const { userId } = req as AuthenticatedRequest;
+    const conversation = await coachingService.createSession(userId);
     res.status(201).json(conversation);
   } catch (err) {
     console.error('Create coaching session error:', err);
@@ -19,10 +22,16 @@ router.post('/', async (_req: Request, res: Response) => {
 });
 
 // GET /api/coaching - List sessions
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
-    const conversations = await getConversations();
-    res.json(conversations);
+    const { userId } = req as AuthenticatedRequest;
+    const { data, error } = await supabase
+      .from('coaching_conversations')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
   } catch (err) {
     console.error('List coaching sessions error:', err);
     res.status(500).json({ error: 'セッション一覧の取得に失敗しました' });

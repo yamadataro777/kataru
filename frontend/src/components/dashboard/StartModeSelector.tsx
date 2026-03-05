@@ -2,20 +2,24 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { hasFreeSessions, isTrialExhausted, canAccessDialogue, getFeedbackScore } from '@/lib/session-tracker';
+import { useAuth } from '@/contexts/AuthContext';
+import { canAccessDialogue, hasFreeSessions, getFeedbackScore } from '@/lib/session-tracker';
 import GlassCard from '@/components/ui/GlassCard';
 
 export default function StartModeSelector() {
   const router = useRouter();
+  const { profile } = useAuth();
   const [canRecord, setCanRecord] = useState(true);
   const [dialogueLocked, setDialogueLocked] = useState(false);
   const [showDialogueLock, setShowDialogueLock] = useState(false);
 
+  const plan = profile?.plan || 'free';
+  const freeSessionsUsed = profile?.free_sessions_used || 0;
+
   useEffect(() => {
-    const trialDone = isTrialExhausted();
-    setCanRecord(trialDone || hasFreeSessions());
-    setDialogueLocked(!canAccessDialogue());
-  }, []);
+    setCanRecord(hasFreeSessions(plan, freeSessionsUsed));
+    setDialogueLocked(!canAccessDialogue(plan, freeSessionsUsed));
+  }, [plan, freeSessionsUsed]);
 
   const feedbackScore = getFeedbackScore();
 
@@ -39,6 +43,7 @@ export default function StartModeSelector() {
           "
           style={{
             boxShadow: '0 0 20px rgba(0,212,255,0.15), inset 0 0 20px rgba(0,212,255,0.05)',
+            opacity: canRecord ? 1 : 0.4,
           }}
         >
           <span
@@ -158,29 +163,48 @@ export default function StartModeSelector() {
                   className="text-sm font-bold tracking-[2px] mb-3"
                   style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
                 >
-                  Standard プラン
+                  プランをアップグレード
                 </h3>
                 <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
                   対話モードを含む全機能をお使いいただけます。
                 </p>
-                <div className="flex flex-col gap-2 mb-5">
-                  {[
-                    '月15回の録音セッション',
-                    '詳細分析レポート・アクション提案',
-                    'AI対話モード',
-                    'レポート永久保存',
-                  ].map((feature, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <span className="text-neon-lime text-xs">&#10003;</span>
-                      <span className="text-[10px] text-hud-white opacity-60 tracking-wide">{feature}</span>
-                    </div>
-                  ))}
+
+                {/* Lite Plan */}
+                <div className="border border-[rgba(0,212,255,0.2)] rounded-lg p-3 mb-3">
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-[10px] font-bold tracking-[2px] text-neon-cyan">Lite</span>
+                    <span className="text-sm font-bold text-hud-white">
+                      ¥580 <span className="text-[9px] text-hud-white-dim">/ 月</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {['月15回の録音', '詳細分析レポート', '永久保存'].map((f, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <span className="text-neon-cyan text-[9px]">&#10003;</span>
+                        <span className="text-[9px] text-hud-white opacity-60">{f}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex items-baseline justify-between mb-4">
-                  <span className="text-lg font-bold text-hud-white">
-                    ¥1,480 <span className="text-[10px] text-hud-white-dim">/ 月</span>
-                  </span>
+
+                {/* Standard Plan */}
+                <div className="border border-[rgba(168,255,0,0.3)] rounded-lg p-3 mb-4" style={{ background: 'rgba(168,255,0,0.03)' }}>
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-[10px] font-bold tracking-[2px] text-neon-lime">Standard</span>
+                    <span className="text-sm font-bold text-hud-white">
+                      ¥1,480 <span className="text-[9px] text-hud-white-dim">/ 月</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {['無制限の録音', '詳細分析レポート', 'AI対話モード', '月次分析レポート', '永久保存'].map((f, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <span className="text-neon-lime text-[9px]">&#10003;</span>
+                        <span className="text-[9px] text-hud-white opacity-60">{f}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+
                 <p className="text-[9px] text-neon-lime opacity-50 tracking-[1px] text-center mb-4">
                   近日公開
                 </p>
@@ -191,7 +215,8 @@ export default function StartModeSelector() {
                   対話モード
                 </h3>
                 <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
-                  対話モードは有料プランでご利用いただけます。今後のアップデートをお待ちください。
+                  対話モードは Standard プランでご利用いただけます。
+                  まずは録音モードで Kataru を体験してみてください。
                 </p>
               </>
             )}

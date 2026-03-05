@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getSession } from '@/lib/api';
 import { Session } from '@/types/session';
-import { shouldShowFeedbackAfterResults } from '@/lib/session-tracker';
+import { useAuth } from '@/contexts/AuthContext';
+import { getSessionPhase, shouldShowFeedbackAfterResults } from '@/lib/session-tracker';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
 import KeyInsights from '@/components/report/KeyInsights';
@@ -15,8 +16,14 @@ import ReportSection from '@/components/report/ReportSection';
 export default function ResultsClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { profile } = useAuth();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const plan = profile?.plan || 'free';
+  const freeSessionsUsed = profile?.free_sessions_used || 0;
+  const phase = getSessionPhase(freeSessionsUsed > 0 ? freeSessionsUsed - 1 : 0);
+  const showFeedback = shouldShowFeedbackAfterResults(plan, freeSessionsUsed);
 
   useEffect(() => {
     const id = searchParams.get('id');
@@ -54,19 +61,22 @@ export default function ResultsClient() {
   }
 
   const { report } = session;
+  const isPaidReport = !!report.action_items || !!report.contradictions;
+
+  const handleBack = () => {
+    if (showFeedback) {
+      router.push('/feedback');
+    } else {
+      router.push('/');
+    }
+  };
 
   return (
     <div className="flex flex-col min-h-dvh pb-8">
       {/* Header */}
       <div className="px-5 py-4 flex-shrink-0">
         <button
-          onClick={() => {
-            if (shouldShowFeedbackAfterResults()) {
-              router.push('/feedback');
-            } else {
-              router.push('/');
-            }
-          }}
+          onClick={handleBack}
           className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer mb-3 flex items-center gap-1"
         >
           <span>&larr;</span> BACK
@@ -156,16 +166,31 @@ export default function ResultsClient() {
           </GlassCard>
         )}
 
+        {/* Teaser for free users (session 2) - show what paid reports include */}
+        {!isPaidReport && phase === 'teaser' && (
+          <GlassCard className="p-4" variant="lime">
+            <span className="label mb-2 block" style={{ color: 'var(--neon-lime)' }}>UPGRADE PREVIEW</span>
+            <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-3">
+              有料プランでは以下の分析も利用できます:
+            </p>
+            <div className="flex flex-col gap-2">
+              {['矛盾点の検出', 'アクション提案', '思考パターン分析', '構造化された詳細レポート'].map((item, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-neon-lime text-[9px]">&#10003;</span>
+                  <span className="text-[10px] text-hud-white opacity-60 tracking-wide">{item}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[9px] text-neon-lime opacity-50 tracking-[1px] text-center mt-3">
+              次回のセッションで詳細レポートを体験できます
+            </p>
+          </GlassCard>
+        )}
+
         {/* Back button */}
         <div className="mt-4 flex justify-center">
-          <NeonButton onClick={() => {
-            if (shouldShowFeedbackAfterResults()) {
-              router.push('/feedback');
-            } else {
-              router.push('/');
-            }
-          }}>
-            {shouldShowFeedbackAfterResults() ? '次へ' : 'ホームに戻る'}
+          <NeonButton onClick={handleBack}>
+            {showFeedback ? '次へ' : 'ホームに戻る'}
           </NeonButton>
         </div>
       </div>

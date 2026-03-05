@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import ScanLines from '@/components/ui/ScanLines';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 export const metadata: Metadata = {
   title: 'KATARU — 声で考えを整理するAIツール',
@@ -33,9 +34,11 @@ export default function RootLayout({
         style={{ fontFamily: "'Menlo', 'Courier New', monospace" }}
         className="antialiased"
       >
-        <div className="relative w-full max-w-[390px] min-h-dvh mx-auto bg-bg-primary overflow-hidden">
-          {children}
-        </div>
+        <AuthProvider>
+          <div className="relative w-full max-w-[390px] min-h-dvh mx-auto bg-bg-primary overflow-hidden">
+            {children}
+          </div>
+        </AuthProvider>
         <ScanLines />
       </body>
     </html>

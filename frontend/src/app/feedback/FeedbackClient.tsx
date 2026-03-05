@@ -26,7 +26,6 @@ export default function FeedbackClient() {
   const handleRatingSubmit = () => {
     if (score === null) return;
 
-    // Fire-and-forget backend submit
     submitFeedback({
       score,
       comment: comment || undefined,
@@ -43,7 +42,6 @@ export default function FeedbackClient() {
   };
 
   const handleSuggestionSubmit = () => {
-    // Fire-and-forget suggestion update
     submitFeedback({
       score: score!,
       suggestion: suggestion || undefined,
@@ -110,11 +108,11 @@ export default function FeedbackClient() {
     );
   }
 
-  // === Satisfied Step (score >= 3) ===
+  // === Satisfied Step (score >= 3) — 3-tier plan display ===
   if (step === 'satisfied') {
     return (
       <div className="flex flex-col min-h-dvh px-5 py-8">
-        <div className="flex-1 flex flex-col items-center justify-center gap-8">
+        <div className="flex-1 flex flex-col items-center justify-center gap-6">
           <div className="text-center">
             <div
               className="w-16 h-16 rounded-full border-2 border-neon-lime flex items-center justify-center mx-auto mb-4"
@@ -135,37 +133,58 @@ export default function FeedbackClient() {
             </p>
           </div>
 
-          <GlassCard className="p-6 w-full max-w-sm" variant="lime">
-            <div className="flex items-baseline justify-between mb-4">
-              <span
-                className="text-sm font-bold tracking-[2px] text-neon-lime"
-                style={{ textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
-              >
+          {/* Lite Plan */}
+          <GlassCard className="p-5 w-full max-w-sm" variant="cyan">
+            <div className="flex items-baseline justify-between mb-3">
+              <span className="text-sm font-bold tracking-[2px] text-neon-cyan" style={{ textShadow: '0 0 8px rgba(0,212,255,0.3)' }}>
+                Lite プラン
+              </span>
+              <span className="text-lg font-bold text-hud-white">
+                ¥580 <span className="text-[10px] text-hud-white-dim">/ 月</span>
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 mb-4">
+              {['月15回の録音セッション', '詳細分析レポート・アクション提案', 'レポート永久保存'].map((feature, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-neon-cyan text-xs flex-shrink-0">&#10003;</span>
+                  <span className="text-[10px] text-hud-white opacity-70 tracking-wide">{feature}</span>
+                </div>
+              ))}
+            </div>
+            <NeonButton variant="cyan" onClick={() => setStep('thankyou')} className="w-full">
+              Lite に登録
+            </NeonButton>
+            <p className="text-[9px] text-neon-cyan opacity-50 tracking-[1px] text-center mt-2">近日公開</p>
+          </GlassCard>
+
+          {/* Standard Plan */}
+          <GlassCard className="p-5 w-full max-w-sm" variant="lime">
+            <div className="flex items-baseline justify-between mb-3">
+              <span className="text-sm font-bold tracking-[2px] text-neon-lime" style={{ textShadow: '0 0 8px rgba(168,255,0,0.3)' }}>
                 Standard プラン
               </span>
               <span className="text-lg font-bold text-hud-white">
                 ¥1,480 <span className="text-[10px] text-hud-white-dim">/ 月</span>
               </span>
             </div>
-            <div className="flex flex-col gap-2.5 mb-5">
+            <div className="flex flex-col gap-2 mb-4">
               {[
-                '月15回の録音セッション',
+                '無制限の録音セッション',
                 '詳細分析レポート・アクション提案',
                 'AI対話モード',
+                '月次分析レポート',
                 'レポート永久保存',
               ].map((feature, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <span className="text-neon-lime text-xs flex-shrink-0">&#10003;</span>
-                  <span className="text-[11px] text-hud-white opacity-70 tracking-wide">{feature}</span>
+                  <span className="text-[10px] text-hud-white opacity-70 tracking-wide">{feature}</span>
                 </div>
               ))}
             </div>
             <NeonButton variant="lime" onClick={() => setStep('thankyou')} className="w-full">
-              プランに登録する
+              Standard に登録
             </NeonButton>
-            <p className="text-[9px] text-neon-lime opacity-50 tracking-[1px] text-center mt-2">
-              近日公開
-            </p>
+            <p className="text-[9px] text-neon-lime opacity-50 tracking-[1px] text-center mt-2">近日公開</p>
           </GlassCard>
 
           <button

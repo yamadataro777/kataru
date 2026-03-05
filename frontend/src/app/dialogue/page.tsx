@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { useCoachingDialogue } from '@/hooks/useCoachingDialogue';
 import { StageProgressBar } from '@/components/coaching/StageProgressBar';
 import { ModeSelector } from '@/components/coaching/ModeSelector';
@@ -9,10 +10,18 @@ import { ModeSwitchSuggestionBanner } from '@/components/coaching/ModeSwitchSugg
 import { AdvanceStageButton } from '@/components/coaching/AdvanceStageButton';
 import { CoachingConversationThread } from '@/components/coaching/CoachingConversationThread';
 import { CoachingRecordButton } from '@/components/coaching/CoachingRecordButton';
+import { getSessionPhase } from '@/lib/session-tracker';
+import GlassCard from '@/components/ui/GlassCard';
+import NeonButton from '@/components/ui/NeonButton';
 import type { CoachingStage } from '@/types/coaching';
 
 export default function DialoguePage() {
   const router = useRouter();
+  const { profile } = useAuth();
+  const plan = profile?.plan || 'free';
+  const freeSessionsUsed = profile?.free_sessions_used || 0;
+  const isPreview = plan !== 'standard' && getSessionPhase(freeSessionsUsed) === 'dialogue_preview';
+  const [showPreviewEnd, setShowPreviewEnd] = useState(false);
   const {
     conversationId,
     currentStage,
@@ -48,6 +57,13 @@ export default function DialoguePage() {
       endSession();
     }
   }, [uiState, endSession]);
+
+  // In preview mode, show end modal when stage 2 is done and user tries to advance
+  useEffect(() => {
+    if (isPreview && currentStage > 2 && !showPreviewEnd) {
+      setShowPreviewEnd(true);
+    }
+  }, [isPreview, currentStage, showPreviewEnd]);
 
   const handleRecordingComplete = useCallback(
     (blob: Blob, transcript: string) => {
@@ -301,10 +317,39 @@ export default function DialoguePage() {
         {/* Record button */}
         <CoachingRecordButton
           onRecordingComplete={handleRecordingComplete}
-          disabled={isProcessing}
+          disabled={isProcessing || showPreviewEnd}
           stageMode={stageMode}
         />
       </div>
+
+      {/* Preview End Modal */}
+      {showPreviewEnd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,14,26,0.9)]">
+          <GlassCard className="mx-5 max-w-sm p-6" variant="lime">
+            <h3
+              className="text-sm font-bold tracking-[2px] mb-3"
+              style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
+            >
+              対話モード プレビュー完了
+            </h3>
+            <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
+              ここまでが無料体験です。Standard プランにアップグレードすると、
+              4ステージ全てのコーチングを体験できます。
+            </p>
+            <div className="flex flex-col gap-3">
+              <NeonButton variant="lime" onClick={() => router.push('/pricing')} className="w-full">
+                プランを見る
+              </NeonButton>
+              <button
+                onClick={() => router.push('/')}
+                className="w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(232,237,245,0.15)] rounded py-2 cursor-pointer"
+              >
+                ホームに戻る
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
@@ -18,6 +18,11 @@ export default function LandingPage() {
   const [email, setEmail] = useState('');
   const [waitlistDone, setWaitlistDone] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Pre-warm backend on landing page load (cold start mitigation)
+  useEffect(() => {
+    fetch(`${API_URL}/health`).catch(() => {});
+  }, []);
 
   const handleCTA = useCallback(async () => {
     // Fast health check — if server responds quickly, go straight to app

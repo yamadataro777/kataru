@@ -8,88 +8,82 @@ import PendingActions from '@/components/analytics/PendingActions';
 import RecurringThemes from '@/components/analytics/RecurringThemes';
 import ThinkingTimeline from '@/components/analytics/ThinkingTimeline';
 import UsageCard from '@/components/analytics/UsageCard';
+import AuthGuard from '@/components/auth/AuthGuard';
 import { getAnalytics, AnalyticsData } from '@/lib/api';
-import { getFreeSessionsUsed, FREE_SESSION_LIMIT } from '@/lib/session-tracker';
-
-const PAID_SESSION_LIMIT = 15;
+import { useAuth } from '@/contexts/AuthContext';
+import { FREE_SESSION_LIMIT, getPlanLimits } from '@/lib/session-tracker';
 
 export default function AnalyticsPage() {
+  const { profile } = useAuth();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isPaid, setIsPaid] = useState(false);
-  const [sessionUsed, setSessionUsed] = useState(0);
-  const [sessionLimit, setSessionLimit] = useState(FREE_SESSION_LIMIT);
+
+  const plan = profile?.plan || 'free';
+  const isPaid = plan !== 'free';
+  const limits = getPlanLimits(plan);
+  const sessionUsed = isPaid ? (analytics?.monthlySessionCount || 0) : (profile?.free_sessions_used || 0);
+  const sessionLimit = limits.sessions === Infinity ? -1 : limits.sessions;
 
   useEffect(() => {
     getAnalytics()
-      .then((data) => {
-        setAnalytics(data);
-        // Proxy: if any pending actions exist, user has paid reports (action_items is paid-only)
-        const paid = data.pendingActions.length > 0;
-        setIsPaid(paid);
-        if (paid) {
-          setSessionUsed(data.monthlySessionCount);
-          setSessionLimit(PAID_SESSION_LIMIT);
-        } else {
-          setSessionUsed(getFreeSessionsUsed());
-          setSessionLimit(FREE_SESSION_LIMIT);
-        }
-      })
+      .then(setAnalytics)
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   return (
-    <div className="flex flex-col min-h-dvh">
-      <Header />
+    <AuthGuard>
+      <div className="flex flex-col min-h-dvh">
+        <Header />
 
-      <div className="flex-1 px-5 pb-20">
-        <div className="mt-4 mb-5">
-          <span className="label">THINKING MAP</span>
-          <h2 className="text-lg font-bold tracking-[2px] mt-1">思考マップ</h2>
-          <div className="hud-line mt-3" />
+        <div className="flex-1 px-5 pb-20">
+          <div className="mt-4 mb-5">
+            <span className="label">THINKING MAP</span>
+            <h2 className="text-lg font-bold tracking-[2px] mt-1">思考マップ</h2>
+            <div className="hud-line mt-3" />
+          </div>
+
+          {loading ? (
+            <div className="text-center py-12">
+              <span
+                className="text-xs tracking-[3px] text-neon-cyan"
+                style={{ animation: 'neon-flicker 2s ease infinite' }}
+              >
+                LOADING...
+              </span>
+            </div>
+          ) : analytics ? (
+            <div className="flex flex-col gap-4">
+              <MonthlyInsight
+                topicCounts={analytics.topicCounts}
+                monthlySessionCount={analytics.monthlySessionCount}
+              />
+              <PendingActions
+                actions={analytics.pendingActions}
+                isPaid={isPaid}
+              />
+              <RecurringThemes topicCounts={analytics.topicCounts} />
+              <ThinkingTimeline
+                sessions={analytics.recentSessions}
+                isPaid={isPaid}
+              />
+              <UsageCard
+                used={sessionUsed}
+                limit={sessionLimit === -1 ? FREE_SESSION_LIMIT : sessionLimit}
+                isPaid={isPaid}
+              />
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-[12px] text-hud-white-dim" style={{ fontFamily: 'sans-serif' }}>
+                データの読み込みに失敗しました
+              </p>
+            </div>
+          )}
         </div>
 
-        {loading ? (
-          <div className="text-center py-12">
-            <span
-              className="text-xs tracking-[3px] text-neon-cyan"
-              style={{ animation: 'neon-flicker 2s ease infinite' }}
-            >
-              LOADING...
-            </span>
-          </div>
-        ) : analytics ? (
-          <div className="flex flex-col gap-4">
-            <MonthlyInsight
-              topicCounts={analytics.topicCounts}
-              monthlySessionCount={analytics.monthlySessionCount}
-            />
-            <PendingActions
-              actions={analytics.pendingActions}
-              isPaid={isPaid}
-            />
-            <RecurringThemes topicCounts={analytics.topicCounts} />
-            <ThinkingTimeline
-              sessions={analytics.recentSessions}
-              isPaid={isPaid}
-            />
-            <UsageCard
-              used={sessionUsed}
-              limit={sessionLimit}
-              isPaid={isPaid}
-            />
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <p className="text-[12px] text-hud-white-dim" style={{ fontFamily: 'sans-serif' }}>
-              データの読み込みに失敗しました
-            </p>
-          </div>
-        )}
+        <BottomNav />
       </div>
-
-      <BottomNav />
-    </div>
+    </AuthGuard>
   );
 }

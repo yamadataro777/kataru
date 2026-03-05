@@ -1,7 +1,15 @@
 import { Session } from '@/types/session';
 import { Conversation, ConversationReport } from '@/types/conversation';
+import { supabase } from './supabase';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (!supabase) return {};
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return {};
+  return { Authorization: `Bearer ${session.access_token}` };
+}
 
 export function createTimeoutSignal(ms: number): AbortSignal {
   const controller = new AbortController();
@@ -15,14 +23,19 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const authHeaders = await getAuthHeaders();
     const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+        ...options?.headers,
+      },
       ...options,
       signal: controller.signal,
     });
     if (!res.ok) {
       const error = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(error.message || `Request failed: ${res.status}`);
+      throw new Error(error.message || error.error || `Request failed: ${res.status}`);
     }
     return res.json();
   } catch (err) {
@@ -56,10 +69,12 @@ export async function uploadAudio(sessionId: string, audioBlob: Blob): Promise<S
   const formData = new FormData();
   formData.append('audio', audioBlob, `recording.${ext}`);
   const signal = createTimeoutSignal(60_000);
+  const authHeaders = await getAuthHeaders();
   try {
     const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/audio`, {
       method: 'POST',
       body: formData,
+      headers: authHeaders,
       signal,
     });
     if (!res.ok) {
@@ -82,10 +97,10 @@ export async function transcribe(sessionId: string, transcript?: string): Promis
   });
 }
 
-export async function generateReport(sessionId: string, plan?: 'free' | 'paid'): Promise<unknown> {
+export async function generateReport(sessionId: string): Promise<unknown> {
   return request('/api/report', {
     method: 'POST',
-    body: JSON.stringify({ session_id: sessionId, plan: plan || 'free' }),
+    body: JSON.stringify({ session_id: sessionId }),
   });
 }
 
@@ -132,10 +147,12 @@ export async function sendTurn(
     formData.append('audio', audioBlob, `recording.${ext}`);
     if (transcript) formData.append('transcript', transcript);
     const signal = createTimeoutSignal(90_000);
+    const authHeaders = await getAuthHeaders();
     try {
       const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/turns`, {
         method: 'POST',
         body: formData,
+        headers: authHeaders,
         signal,
       });
       if (!res.ok) {
@@ -181,13 +198,11 @@ export interface PendingAction {
 }
 
 export interface AnalyticsData {
-  // Existing fields (used by Home page)
   totalSessions: number;
   totalWords: number;
   avgDuration: number;
   totalDuration: number;
   recentTopics: string[];
-  // New fields for THINKING MAP
   topicCounts: TopicCount[];
   recentSessions: RecentSessionSummary[];
   pendingActions: PendingAction[];
@@ -222,4 +237,89 @@ export async function getAnalytics(): Promise<AnalyticsData> {
     })),
     monthlySessionCount: (data.monthly_session_count as number) ?? 0,
   };
+}
+
+// === Coaching API ===
+
+export async function createCoachingSession() {
+  return request('/api/coaching', { method: 'POST' });
+}
+
+export async function getCoachingSession(id: string) {
+  return request(`/api/coaching/${id}`);
+}
+
+export async function getCoachingInitialMessage(id: string, stage: number, mode: string) {
+  return request(`/api/coaching/${id}/initial`, {
+    method: 'POST',
+    body: JSON.stringify({ stage, mode }),
+  });
+}
+
+export async function submitCoachingTurn(
+  id: string,
+  data: { transcript?: string; stage: number; mode?: string; audio?: Blob }
+) {
+  if (data.audio) {
+    const ext = data.audio.type.includes('mp4') ? 'mp4' : data.audio.type.includes('wav') ? 'wav' : 'webm';
+    const formData = new FormData();
+    formData.append('audio', data.audio, `recording.${ext}`);
+    if (data.transcript) formData.append('transcript', data.transcript);
+    formData.append('stage', String(data.stage));
+    if (data.mode) formData.append('mode', data.mode);
+    const signal = createTimeoutSignal(90_000);
+    const authHeaders = await getAuthHeaders();
+    const res = await fetch(`${BASE_URL}/api/coaching/${id}/turns`, {
+      method: 'POST',
+      body: formData,
+      headers: authHeaders,
+      signal,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(body.message || body.error || 'Failed to submit turn');
+    }
+    return res.json();
+  }
+  return request(`/api/coaching/${id}/turns`, {
+    method: 'POST',
+    body: JSON.stringify({
+      transcript: data.transcript,
+      stage: data.stage,
+      mode: data.mode,
+    }),
+  });
+}
+
+export async function advanceCoachingStage(id: string, nextStage: number, extractedData?: unknown) {
+  return request(`/api/coaching/${id}/advance`, {
+    method: 'POST',
+    body: JSON.stringify({ nextStage, extractedData }),
+  });
+}
+
+export async function endCoachingSession(id: string) {
+  return request(`/api/coaching/${id}/end`, { method: 'POST' });
+}
+
+export async function submitCoachingFeedback(data: {
+  score: number;
+  comment?: string;
+  suggestion?: string;
+  device_id?: string;
+}): Promise<unknown> {
+  return submitFeedback(data);
+}
+
+// === Stripe API ===
+
+export async function createCheckoutSession(plan: 'lite' | 'standard'): Promise<{ url: string }> {
+  return request('/api/stripe/checkout', {
+    method: 'POST',
+    body: JSON.stringify({ plan }),
+  });
+}
+
+export async function createPortalSession(): Promise<{ url: string }> {
+  return request('/api/stripe/portal', { method: 'POST' });
 }

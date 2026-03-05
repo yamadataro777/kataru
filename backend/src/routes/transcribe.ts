@@ -2,11 +2,12 @@ import { Router, Request, Response } from 'express';
 import OpenAI, { toFile } from 'openai';
 import { getSession, updateSession } from '../services/supabase';
 import { cleanTranscript } from '../utils/clean-transcript';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
 // POST / - Transcribe audio
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { session_id, transcript } = req.body;
 
