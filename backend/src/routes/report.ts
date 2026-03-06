@@ -52,7 +52,8 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     res.json(report);
   } catch (error) {
     console.error('Error generating report:', error);
-    res.status(500).json({ error: 'Failed to generate report' });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: `Failed to generate report: ${message}` });
   }
 });
 

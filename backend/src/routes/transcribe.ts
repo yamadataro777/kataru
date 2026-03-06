@@ -18,14 +18,9 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
     let finalTranscript = transcript;
 
-    // If no transcript from Web Speech API, use Whisper
-    if (!finalTranscript) {
-      const session = await getSession(session_id);
-      if (!session?.audio_url) {
-        res.status(400).json({ error: 'No audio URL found for this session' });
-        return;
-      }
-
+    // Always prefer Whisper when audio is available (higher accuracy for specialized terms)
+    const session = await getSession(session_id);
+    if (session?.audio_url) {
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
       // Fetch audio file from Supabase Storage
@@ -39,12 +34,16 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       const file = await toFile(buffer, `recording.${audioExt}`, { type: audioMime });
 
       const whisperResponse = await openai.audio.transcriptions.create({
-        model: 'whisper-1',
+        model: 'gpt-4o-transcribe',
         file,
         language: 'ja',
+        prompt: '哲学的な思考や自己分析の録音。虚無主義、ニヒリズム、実存主義、形而上学、認識論、弁証法、現象学、構造主義、ポスト構造主義、脱構築、存在論、アイデンティティ、自己実現、内省、メタ認知。',
       });
 
       finalTranscript = whisperResponse.text;
+    } else if (!finalTranscript) {
+      res.status(400).json({ error: 'No audio URL found for this session' });
+      return;
     }
 
     // Whisperが生成するハルシネーション定型文を除去
@@ -53,10 +52,21 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       /ご視聴いただきありがとうございました。?/g,
       /ご視聴ありがとうございます。?/g,
       /ご視聴いただきありがとうございます。?/g,
+      /最後までご覧いただきありがとうございました。?/g,
+      /最後までご視聴いただきありがとうございました。?/g,
       /チャンネル登録お願いします。?/g,
       /チャンネル登録よろしくお願いします。?/g,
       /高評価お願いします。?/g,
       /いいねとチャンネル登録をお願いします。?/g,
+      /グッドボタン.*お願いします。?/g,
+      /字幕は自動生成されています。?/g,
+      /字幕提供.*$/g,
+      /サブタイトル.*$/g,
+      /お疲れ様でした。?/g,
+      /おやすみなさい。?/g,
+      /ではまた。?/g,
+      /また次の動画でお会いしましょう。?/g,
+      /次回もお楽しみに。?/g,
       /ありがとうございました。?$/g,
     ];
     for (const pattern of hallucinations) {
@@ -67,13 +77,13 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
     const wordCount = finalTranscript.length;
 
-    const session = await updateSession(session_id, {
+    const updated = await updateSession(session_id, {
       transcript: finalTranscript,
       word_count: wordCount,
       status: 'generating',
     });
 
-    res.json({ transcript: finalTranscript, word_count: wordCount, session });
+    res.json({ transcript: finalTranscript, word_count: wordCount, session: updated });
   } catch (error) {
     console.error('Error transcribing:', error);
     res.status(500).json({ error: 'Failed to transcribe audio' });

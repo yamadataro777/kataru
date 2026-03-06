@@ -50,8 +50,20 @@ export async function generateReport(transcript: string, plan: 'free' | 'paid' =
   // Strip markdown code blocks if Gemini wraps the JSON
   text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
-  const report: Report = JSON.parse(text);
-  return report;
+  // Extract JSON object even if surrounded by extra text
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.error('Gemini response did not contain valid JSON:', text.substring(0, 500));
+    throw new Error('Gemini response did not contain valid JSON');
+  }
+
+  try {
+    const report: Report = JSON.parse(jsonMatch[0]);
+    return report;
+  } catch (parseError) {
+    console.error('Failed to parse Gemini JSON response:', text.substring(0, 500));
+    throw parseError;
+  }
 }
 
 export async function generateContent(prompt: string): Promise<string> {

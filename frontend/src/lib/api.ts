@@ -247,6 +247,10 @@ export async function getAnalytics(): Promise<AnalyticsData> {
 
 // === Account API ===
 
+export async function togglePlan(): Promise<unknown> {
+  return request('/api/auth/upgrade', { method: 'POST' });
+}
+
 export async function deleteAccount(): Promise<void> {
   await request('/api/auth/account', { method: 'DELETE' });
 }
