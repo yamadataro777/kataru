@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import BottomNav from '@/components/layout/BottomNav';
 import GlassCard from '@/components/ui/GlassCard';
-import { getSessions } from '@/lib/api';
+import { getSessions, generateReport } from '@/lib/api';
 import { Session } from '@/types/session';
 
 export default function HistoryPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
 
   useEffect(() => {
     getSessions()
@@ -19,6 +20,20 @@ export default function HistoryPage() {
       .catch(() => setSessions([]))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleGenerateReport = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    setGeneratingId(sessionId);
+    try {
+      await generateReport(sessionId);
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, status: 'completed' as const } : s))
+      );
+      router.push(`/results?id=${sessionId}`);
+    } catch {
+      setGeneratingId(null);
+    }
+  };
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return '--:--';
@@ -100,6 +115,20 @@ export default function HistoryPage() {
                   <span>{formatDuration(session.duration_seconds)}</span>
                   {session.word_count && <span>{session.word_count} words</span>}
                 </div>
+                {session.status === 'generating' && session.transcript && (
+                  <button
+                    onClick={(e) => handleGenerateReport(e, session.id)}
+                    disabled={generatingId === session.id}
+                    className="mt-3 w-full text-[10px] tracking-[2px] font-bold py-2 rounded cursor-pointer transition-all disabled:opacity-40"
+                    style={{
+                      color: 'var(--neon-cyan)',
+                      background: 'rgba(0,212,255,0.08)',
+                      border: '1px solid rgba(0,212,255,0.3)',
+                    }}
+                  >
+                    {generatingId === session.id ? 'GENERATING...' : 'レポートを生成'}
+                  </button>
+                )}
               </GlassCard>
             ))}
           </div>

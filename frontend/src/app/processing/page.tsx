@@ -23,10 +23,32 @@ export default function ProcessingPage() {
     { label: 'GENERATING REPORT', status: 'pending' },
   ]);
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const startedRef = useRef(false);
 
   const updateStep = (index: number, status: StepStatus) => {
     setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, status } : s)));
+  };
+
+  const retryReport = async () => {
+    if (!sessionId || retrying) return;
+    setRetrying(true);
+    setError(null);
+    updateStep(3, 'active');
+    try {
+      await generateReport(sessionId);
+      updateStep(3, 'done');
+      await refreshProfile();
+      setTimeout(() => {
+        router.push(`/results?id=${sessionId}`);
+      }, 800);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Processing failed');
+      updateStep(3, 'error');
+    } finally {
+      setRetrying(false);
+    }
   };
 
   useEffect(() => {
@@ -38,6 +60,7 @@ export default function ProcessingPage() {
         // Step 1: Create session
         updateStep(0, 'active');
         const session = await createSession();
+        setSessionId(session.id);
         updateStep(0, 'done');
 
         // Step 2: Upload audio
@@ -158,11 +181,28 @@ export default function ProcessingPage() {
         </div>
 
         {error && (
-          <div className="text-center">
-            <p className="text-xs text-neon-magenta tracking-[1px] mb-4">{error}</p>
+          <div className="text-center flex flex-col gap-3 w-full max-w-xs">
+            <p className="text-xs text-neon-magenta tracking-[1px] mb-1">{error}</p>
+            {sessionId && steps[2].status === 'done' && (
+              <button
+                onClick={retryReport}
+                disabled={retrying}
+                className="text-xs text-neon-cyan tracking-[2px] bg-transparent border border-neon-cyan rounded px-4 py-2.5 cursor-pointer disabled:opacity-40"
+              >
+                {retrying ? 'RETRYING...' : 'RETRY REPORT'}
+              </button>
+            )}
+            {sessionId && steps[2].status === 'done' && (
+              <button
+                onClick={() => router.push('/history')}
+                className="text-xs text-neon-lime tracking-[2px] bg-transparent border border-[rgba(168,255,0,0.3)] rounded px-4 py-2.5 cursor-pointer"
+              >
+                保存済み — 後で生成
+              </button>
+            )}
             <button
               onClick={() => router.push('/')}
-              className="text-xs text-neon-cyan tracking-[2px] bg-transparent border border-neon-cyan rounded px-4 py-2 cursor-pointer"
+              className="text-xs text-hud-white-dim tracking-[2px] bg-transparent border border-[rgba(232,237,245,0.2)] rounded px-4 py-2 cursor-pointer"
             >
               BACK TO HOME
             </button>
