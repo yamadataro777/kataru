@@ -84,6 +84,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     });
 
+    // Handle deep link callback from OAuth (iOS in-app browser)
+    if (isNativePlatform()) {
+      import('@capacitor/app').then(({ App }) => {
+        App.addListener('appUrlOpen', async ({ url }) => {
+          if (url.includes('login-callback')) {
+            // Extract tokens from the URL fragment
+            const hashParams = new URLSearchParams(url.split('#')[1] || '');
+            const accessToken = hashParams.get('access_token');
+            const refreshToken = hashParams.get('refresh_token');
+            if (accessToken && refreshToken && supabase) {
+              await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+            }
+            // Close the in-app browser
+            import('@capacitor/browser').then(({ Browser }) => Browser.close()).catch(() => {});
+          }
+        });
+      }).catch(() => {});
+    }
+
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
@@ -120,15 +139,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     if (!supabase) return { error: 'Supabase not configured' };
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: isNativePlatform()
-          ? 'com.kataru.voicememocom123://login-callback'
-          : `${window.location.origin}/login`,
-      },
-    });
-    return { error: error?.message ?? null };
+    if (isNativePlatform()) {
+      // In-app browser on iOS using SFSafariViewController
+      try {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: 'com.kataru.voicememocom123://login-callback',
+            skipBrowserRedirect: true,
+          },
+        });
+        if (error || !data.url) return { error: error?.message ?? 'Failed to get OAuth URL' };
+        const { Browser } = await import('@capacitor/browser');
+        await Browser.open({ url: data.url, presentationStyle: 'popover' });
+        return { error: null };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : 'Google Sign-In failed' };
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/login`,
+        },
+      });
+      return { error: error?.message ?? null };
+    }
   };
 
   const signInWithApple = async () => {
