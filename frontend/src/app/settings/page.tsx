@@ -1,19 +1,46 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { deleteAccount } from '@/lib/api';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
 
+const APP_VERSION = '0.1.0';
+const DEV_TAP_COUNT = 5;
+const DEV_TAP_WINDOW_MS = 3000;
+
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, overridePlan } = useAuth();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [devUnlocked, setDevUnlocked] = useState(false);
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleVersionTap = () => {
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    if (tapCountRef.current >= DEV_TAP_COUNT) {
+      tapCountRef.current = 0;
+      if (devUnlocked) {
+        // Toggle off: restore to free
+        overridePlan('free');
+        setDevUnlocked(false);
+      } else {
+        overridePlan('standard');
+        setDevUnlocked(true);
+      }
+      return;
+    }
+    tapTimerRef.current = setTimeout(() => {
+      tapCountRef.current = 0;
+    }, DEV_TAP_WINDOW_MS);
+  };
 
   if (!user) {
     router.push('/login');
@@ -136,10 +163,25 @@ export default function SettingsPage() {
         )}
       </GlassCard>
 
+      {/* Version */}
+      <div className="mt-6 flex flex-col items-center gap-1">
+        <button
+          onClick={handleVersionTap}
+          className="text-[9px] tracking-[2px] text-hud-white-dim bg-transparent border-none cursor-default select-none"
+        >
+          Kataru v{APP_VERSION}
+        </button>
+        {devUnlocked && (
+          <span className="text-[9px] tracking-[1px] text-neon-lime animate-pulse">
+            DEV MODE ON
+          </span>
+        )}
+      </div>
+
       {/* Back */}
       <button
         onClick={() => router.back()}
-        className="mt-6 w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border-none cursor-pointer"
+        className="mt-4 w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border-none cursor-pointer"
       >
         ← 戻る
       </button>
