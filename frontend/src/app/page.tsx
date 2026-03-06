@@ -6,6 +6,7 @@ import BottomNav from '@/components/layout/BottomNav';
 import StatsGrid from '@/components/dashboard/StatsGrid';
 import StartModeSelector from '@/components/dashboard/StartModeSelector';
 import RecentSessions from '@/components/dashboard/RecentSessions';
+import TrialJourney from '@/components/dashboard/TrialJourney';
 import AuthGuard from '@/components/auth/AuthGuard';
 import { useRouter } from 'next/navigation';
 import { getSessions, getAnalytics, getConversations } from '@/lib/api';
@@ -49,7 +50,11 @@ export default function HomePage() {
             </h2>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-4">
+            <TrialJourney />
+          </div>
+
+          <div className="mt-4">
             <StatsGrid
               totalSessions={analytics.totalSessions}
               totalWords={analytics.totalWords}

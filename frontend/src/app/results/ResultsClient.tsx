@@ -93,6 +93,37 @@ export default function ResultsClient() {
         <div className="hud-line mt-3" />
       </div>
 
+      {/* Unlock Banner */}
+      {isPaidReport && phase === 'full_preview' && (
+        <div
+          className="mx-5 mb-2 rounded-lg px-4 py-3 flex items-center gap-3"
+          style={{
+            background: 'linear-gradient(135deg, rgba(168,255,0,0.08), rgba(0,212,255,0.08))',
+            border: '1px solid rgba(168,255,0,0.3)',
+            boxShadow: '0 0 20px rgba(168,255,0,0.08)',
+            animation: 'glitch-in 0.6s ease forwards',
+          }}
+        >
+          <span
+            className="text-lg"
+            style={{ filter: 'drop-shadow(0 0 6px rgba(168,255,0,0.5))' }}
+          >
+            {'\u2606'}
+          </span>
+          <div className="flex-1">
+            <p
+              className="text-[10px] font-bold tracking-[2px] text-neon-lime"
+              style={{ textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
+            >
+              FULL REPORT UNLOCKED
+            </p>
+            <p className="text-[8px] text-hud-white-dim tracking-wide mt-0.5">
+              詳細レポートが解放されました。矛盾検出・アクション提案・思考パターン分析をご覧ください。
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       <div className="flex flex-col gap-4 px-5 overflow-y-auto">
         {/* Summary */}
@@ -193,9 +224,18 @@ export default function ResultsClient() {
                 </div>
               ))}
             </div>
-            <p className="text-[9px] text-neon-lime opacity-50 tracking-[1px] text-center mt-3">
-              次回のセッションで詳細レポートを体験できます
-            </p>
+            <div
+              className="mt-3 rounded-md px-3 py-2 flex items-center gap-2"
+              style={{
+                background: 'rgba(168,255,0,0.04)',
+                border: '1px solid rgba(168,255,0,0.15)',
+              }}
+            >
+              <span className="text-neon-lime text-[10px]">{'\u25B6'}</span>
+              <span className="text-[9px] text-neon-lime tracking-[1px]">
+                次のセッションで詳細レポートが解放されます
+              </span>
+            </div>
           </GlassCard>
         )}
 
