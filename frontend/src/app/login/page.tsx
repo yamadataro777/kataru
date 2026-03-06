@@ -52,7 +52,7 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-dvh">
+      <div className="fixed inset-0 flex items-center justify-center">
         <span
           className="text-xs tracking-[3px] text-neon-cyan"
           style={{ animation: 'neon-flicker 2s ease infinite' }}
@@ -65,7 +65,7 @@ export default function LoginPage() {
 
   if (signupSuccess) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-dvh px-5 gap-8">
+      <div className="fixed inset-0 flex flex-col items-center justify-center px-5 gap-8">
         <div className="text-center">
           <div
             className="w-16 h-16 rounded-full border-2 border-neon-lime flex items-center justify-center mx-auto mb-4"
@@ -95,7 +95,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-dvh px-5">
+    <div className="fixed inset-0 flex flex-col items-center justify-center px-5 overflow-y-auto">
       <div className="w-full max-w-sm">
         {/* Logo / Title */}
         <div className="text-center mb-8">
