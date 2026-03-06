@@ -45,7 +45,10 @@ export async function generateReport(transcript: string, plan: 'free' | 'paid' =
     : buildFreeReportPrompt(transcript, freeSessionsUsed);
 
   const result = await model.generateContent(prompt);
-  const text = result.response.text();
+  let text = result.response.text();
+
+  // Strip markdown code blocks if Gemini wraps the JSON
+  text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
   const report: Report = JSON.parse(text);
   return report;
