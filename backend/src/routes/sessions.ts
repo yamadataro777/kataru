@@ -116,7 +116,7 @@ router.post('/:id/audio', requireAuth, upload.single('audio'), async (req: Reque
     const session = await updateSession(sessionId, {
       audio_url: publicUrl,
       audio_file_path: filePath,
-      status: 'uploaded',
+      status: 'transcribing',
     });
 
     res.json(session);

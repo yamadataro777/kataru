@@ -21,4 +21,10 @@ export interface Report {
   contradictions?: string[];
   thinking_pattern?: string;
   structure?: { sections: { heading: string; content: string }[] };
+  exploration_questions?: string[];
+  deep_questions?: Array<{
+    question: string;
+    context: string;
+    angle: string;
+  }>;
 }

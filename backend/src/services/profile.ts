@@ -12,6 +12,18 @@ export interface UserProfile {
 }
 
 export async function getProfile(userId: string): Promise<UserProfile> {
+  // Dev bypass: return fake profile
+  if (process.env.NODE_ENV !== 'production' && userId === 'dev-user') {
+    return {
+      id: 'dev-user',
+      plan: 'standard',
+      session_count: 0,
+      free_sessions_used: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
   const { data, error } = await supabase
     .from('profiles')
     .select('*')

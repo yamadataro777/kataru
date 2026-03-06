@@ -174,7 +174,7 @@ export default function LoginPage() {
           </form>
         </GlassCard>
 
-        {process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true' && (
+        {process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true' && (
           <button
             onClick={() => { devBypass(); router.push('/'); }}
             className="mt-4 w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(255,59,122,0.3)] rounded py-2 cursor-pointer opacity-60 hover:opacity-100 transition-opacity"

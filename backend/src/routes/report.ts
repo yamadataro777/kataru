@@ -39,7 +39,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     // Determine report plan from user's actual plan + session count (gradual unlock)
     const profile = await getProfile(userId);
     const reportPlan = getReportPlan(userPlan, profile.free_sessions_used);
-    const report = await generateReport(session.transcript, reportPlan);
+    const report = await generateReport(session.transcript, reportPlan, profile.free_sessions_used);
 
     await updateSession(session_id, {
       report,

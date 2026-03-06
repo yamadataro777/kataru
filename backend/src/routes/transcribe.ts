@@ -70,7 +70,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     const session = await updateSession(session_id, {
       transcript: finalTranscript,
       word_count: wordCount,
-      status: 'transcribed',
+      status: 'generating',
     });
 
     res.json({ transcript: finalTranscript, word_count: wordCount, session });

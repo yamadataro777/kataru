@@ -5,6 +5,10 @@ import { supabase } from './supabase';
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
+  // Dev bypass: skip real auth in development
+  if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true') {
+    return { 'X-Dev-Bypass': 'true' };
+  }
   if (!supabase) return {};
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return {};

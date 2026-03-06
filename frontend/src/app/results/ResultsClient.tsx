@@ -12,6 +12,8 @@ import KeyInsights from '@/components/report/KeyInsights';
 import TopicTags from '@/components/report/TopicTags';
 import SentimentGauge from '@/components/report/SentimentGauge';
 import ReportSection from '@/components/report/ReportSection';
+import ExplorationQuestions from '@/components/report/ExplorationQuestions';
+import DeepQuestions from '@/components/report/DeepQuestions';
 
 export default function ResultsClient() {
   const searchParams = useSearchParams();
@@ -110,6 +112,16 @@ export default function ResultsClient() {
         {/* Key Insights */}
         <KeyInsights insights={report.key_insights} />
 
+        {/* Exploration Questions (free) */}
+        {report.exploration_questions && report.exploration_questions.length > 0 && (
+          <ExplorationQuestions questions={report.exploration_questions} />
+        )}
+
+        {/* Deep Questions (paid / free trial) */}
+        {report.deep_questions && report.deep_questions.length > 0 && (
+          <DeepQuestions questions={report.deep_questions} />
+        )}
+
         {/* Sentiment */}
         <SentimentGauge
           overall={report.sentiment.overall}
@@ -174,7 +186,7 @@ export default function ResultsClient() {
               有料プランでは以下の分析も利用できます:
             </p>
             <div className="flex flex-col gap-2">
-              {['矛盾点の検出', 'アクション提案', '思考パターン分析', '構造化された詳細レポート'].map((item, i) => (
+              {['矛盾点の検出', 'アクション提案', '思考パターン分析', '構造化された詳細レポート', '思考を深める問い'].map((item, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <span className="text-neon-lime text-[9px]">&#10003;</span>
                   <span className="text-[10px] text-hud-white opacity-60 tracking-wide">{item}</span>

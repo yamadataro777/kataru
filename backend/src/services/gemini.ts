@@ -31,12 +31,18 @@ export interface Report {
       content: string;
     }>;
   };
+  exploration_questions?: string[];
+  deep_questions?: Array<{
+    question: string;
+    context: string;
+    angle: string;
+  }>;
 }
 
-export async function generateReport(transcript: string, plan: 'free' | 'paid' = 'free'): Promise<Report> {
+export async function generateReport(transcript: string, plan: 'free' | 'paid' = 'free', freeSessionsUsed: number = 0): Promise<Report> {
   const prompt = plan === 'paid'
     ? buildPaidReportPrompt(transcript)
-    : buildFreeReportPrompt(transcript);
+    : buildFreeReportPrompt(transcript, freeSessionsUsed);
 
   const result = await model.generateContent(prompt);
   const text = result.response.text();

@@ -1,9 +1,12 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { initRevenueCat, isNativePlatform } from '@/lib/revenuecat';
 import type { User, Session } from '@supabase/supabase-js';
+
+const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutes
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export type UserPlan = 'free' | 'lite' | 'standard';
 
@@ -133,8 +136,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return session?.access_token ?? null;
   };
 
+  // Keep Render backend warm by pinging every 14 minutes
+  const keepAliveRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  useEffect(() => {
+    const ping = () => { fetch(`${API_URL}/health`).catch(() => {}); };
+    ping(); // initial ping on app load
+    keepAliveRef.current = setInterval(ping, KEEP_ALIVE_INTERVAL);
+    return () => clearInterval(keepAliveRef.current);
+  }, []);
+
   const devBypass = () => {
-    if (process.env.NODE_ENV !== 'development' || process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
+    if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
     setState({
       user: { id: 'dev-user', email: 'dev@localhost' } as User,
       session: null,

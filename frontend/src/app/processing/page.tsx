@@ -45,10 +45,11 @@ export default function ProcessingPage() {
         const audioDataUrl = sessionStorage.getItem('kataru_audio');
         if (audioDataUrl) {
           const res = await fetch(audioDataUrl);
+          if (!res.ok) throw new Error('Failed to read audio data');
           const blob = await res.blob();
           await uploadAudio(session.id, blob);
-          sessionStorage.removeItem('kataru_audio');
         }
+        sessionStorage.removeItem('kataru_audio');
         updateStep(1, 'done');
 
         // Step 3: Transcribe

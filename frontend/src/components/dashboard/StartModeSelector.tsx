@@ -77,7 +77,7 @@ export default function StartModeSelector() {
           </span>
         </button>
         <span className="text-[9px] text-hud-white-dim tracking-[1px]">
-          録音→AIレポート生成
+          目的なしの整理
         </span>
       </div>
 
@@ -146,7 +146,7 @@ export default function StartModeSelector() {
           </span>
         </button>
         <span className="text-[9px] text-hud-white-dim tracking-[1px]">
-          AIと対話で思考を深掘り
+          目的ありの整理
         </span>
       </div>
 
