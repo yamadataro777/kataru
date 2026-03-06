@@ -43,6 +43,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 すべての開発における指示・決定事項・変更内容は `DEVELOPMENT_HISTORY.md` に記録すること。新しい機能追加、設計変更、バグ修正などを行う際は、その内容と理由をログとして追記する。
 
+## Git Worktree 記録
+
+commit・push・branch操作を行うたびに、`GIT_WORKTREE_LOG.md` に以下を追記すること:
+
+```
+## YYYY-MM-DD HH:MM
+- **Branch**: ブランチ名
+- **Action**: commit / push / merge / branch作成 など
+- **Commit**: ハッシュ(短縮) + メッセージ
+- **Changes**: 変更ファイルの概要（1〜3行）
+```
+
+これにより、セッションをまたいでもブランチの変遷と作業履歴を追跡できるようにする。
+
 ## Project Overview
 
 Kataru is a voice recording and AI-powered analysis app. Users record audio, which gets transcribed (OpenAI Whisper) and analyzed (Google Gemini 2.5 Flash) into structured Japanese-language reports. It runs as a web app and an iOS app via Capacitor.
