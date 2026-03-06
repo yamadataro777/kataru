@@ -11,7 +11,13 @@ import type {
   StageExtractedData,
 } from '../types/coaching';
 import { canAdvanceFromStage, parseLLMResponse } from '../types/coaching';
-import { coachingApi } from '../lib/coachingApi';
+import {
+  createCoachingSession,
+  getCoachingInitialMessage,
+  submitCoachingTurn,
+  advanceCoachingStage,
+  endCoachingSession,
+} from '../lib/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -90,7 +96,7 @@ export function useCoachingDialogue() {
         }));
         return;
       }
-      const conversation = await coachingApi.createSession();
+      const conversation = await createCoachingSession() as { id: string };
       setState((prev) => ({
         ...prev,
         conversationId: conversation.id,
@@ -112,7 +118,7 @@ export function useCoachingDialogue() {
       if (!state.conversationId) return;
       setState((prev) => ({ ...prev, stageMode: mode, uiState: 'PROCESSING', error: null }));
       try {
-        const initialResponse = await coachingApi.getInitialMessage(state.conversationId, 1, mode);
+        const initialResponse = await getCoachingInitialMessage(state.conversationId, 1, mode);
         const parsed = parseLLMResponse(initialResponse, 1, mode);
         const aiTurn: CoachingTurn = {
           id: `initial-${Date.now()}`,
@@ -175,11 +181,11 @@ export function useCoachingDialogue() {
       }));
 
       try {
-        const result = await coachingApi.submitTurn(state.conversationId, {
-          audioBlob,
+        const result = await submitCoachingTurn(state.conversationId, {
+          audio: audioBlob,
           transcript,
           stage: state.currentStage,
-          mode: state.stageMode,
+          mode: state.stageMode || undefined,
         });
 
         const response = parseLLMResponse(result.response, state.currentStage, state.stageMode);
@@ -260,7 +266,7 @@ export function useCoachingDialogue() {
 
     try {
       const currentExtracted = state.extractedData[String(state.currentStage)];
-      const response = await coachingApi.advanceStage(
+      const response = await advanceCoachingStage(
         state.conversationId,
         nextStage,
         currentExtracted
@@ -318,10 +324,10 @@ export function useCoachingDialogue() {
       }));
 
       try {
-        const response = await coachingApi.getInitialMessage(
+        const response = await getCoachingInitialMessage(
           state.conversationId,
           targetStage,
-          state.stageMode
+          state.stageMode || ''
         );
         const parsed = parseLLMResponse(response, targetStage, state.stageMode);
         const aiTurn: CoachingTurn = {
@@ -361,7 +367,7 @@ export function useCoachingDialogue() {
       uiState: 'PROCESSING',
     }));
     try {
-      const response = await coachingApi.getInitialMessage(state.conversationId, 1, newMode);
+      const response = await getCoachingInitialMessage(state.conversationId, 1, newMode);
       const parsed = parseLLMResponse(response, 1, newMode);
       const aiTurn: CoachingTurn = {
         id: `mode-switch-${Date.now()}`,
@@ -398,7 +404,7 @@ export function useCoachingDialogue() {
     if (!state.conversationId) return;
     setState((prev) => ({ ...prev, uiState: 'PROCESSING' }));
     try {
-      await coachingApi.endSession(state.conversationId);
+      await endCoachingSession(state.conversationId);
       router.push(`/dialogue/results?id=${state.conversationId}`);
     } catch (err) {
       setState((prev) => ({
