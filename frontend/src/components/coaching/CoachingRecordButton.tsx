@@ -13,17 +13,21 @@ interface CoachingRecordButtonProps {
   stageMode: StageMode | null;
 }
 
+const MIN_RECORDING_SECONDS = 30;
+
 export function CoachingRecordButton({
   onRecordingComplete,
   disabled = false,
   stageMode,
 }: CoachingRecordButtonProps) {
   const [state, setState] = useState<'idle' | 'recording'>('idle');
+  const [tooShortWarning, setTooShortWarning] = useState(false);
   const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } =
     useAudioRecorder();
   const frequencyData = useAudioVisualizer(analyserNode);
   const { transcript, isSupported, startListening, stopListening } = useTranscription();
   const submittedBlobRef = useRef<Blob | null>(null);
+  const stoppedDurationRef = useRef(0);
 
   // Disable when no mode is selected (stage 1 requirement)
   const isDisabled = disabled || stageMode === null;
@@ -33,18 +37,27 @@ export function CoachingRecordButton({
 
     if (state === 'idle') {
       submittedBlobRef.current = null;
+      setTooShortWarning(false);
       setState('recording');
       await startRecording();
       if (isSupported) startListening();
     } else {
+      stoppedDurationRef.current = duration;
+      if (duration < MIN_RECORDING_SECONDS) {
+        stopRecording();
+        stopListening();
+        setState('idle');
+        setTooShortWarning(true);
+        return;
+      }
       stopRecording();
       stopListening();
       setState('idle');
     }
-  }, [state, isDisabled, startRecording, stopRecording, isSupported, startListening, stopListening]);
+  }, [state, isDisabled, duration, startRecording, stopRecording, isSupported, startListening, stopListening]);
 
   useEffect(() => {
-    if (audioBlob && state === 'idle' && !isRecording && audioBlob !== submittedBlobRef.current) {
+    if (audioBlob && state === 'idle' && !isRecording && audioBlob !== submittedBlobRef.current && stoppedDurationRef.current >= MIN_RECORDING_SECONDS) {
       submittedBlobRef.current = audioBlob;
       onRecordingComplete(audioBlob, transcript);
     }
@@ -154,6 +167,10 @@ export function CoachingRecordButton({
               {formatTime(duration)}
             </span>
           </>
+        ) : tooShortWarning ? (
+          <span className="text-[10px] tracking-[2px] text-neon-magenta font-mono">
+            30秒以上録音してください
+          </span>
         ) : stageMode === null ? (
           <span className="text-[10px] tracking-[2px] text-gray-600 font-mono">
             モードを選択してください

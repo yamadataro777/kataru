@@ -13,11 +13,14 @@ import NeonButton from '@/components/ui/NeonButton';
 
 type InputMode = 'voice' | 'text';
 
+const MIN_RECORDING_SECONDS = 30;
+
 export default function RecordPage() {
   const router = useRouter();
   const [inputMode, setInputMode] = useState<InputMode>('voice');
   const [textInput, setTextInput] = useState('');
   const [textSubmitting, setTextSubmitting] = useState(false);
+  const [tooShortWarning, setTooShortWarning] = useState(false);
   const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } = useAudioRecorder();
   const frequencyData = useAudioVisualizer(analyserNode);
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
@@ -30,6 +33,7 @@ export default function RecordPage() {
 
   useEffect(() => {
     if (inputMode === 'voice') {
+      setTooShortWarning(false);
       startRecording();
     }
     return () => {
@@ -55,6 +59,10 @@ export default function RecordPage() {
 
   useEffect(() => {
     if (audioBlob && !isRecording) {
+      if (duration < MIN_RECORDING_SECONDS) {
+        setTooShortWarning(true);
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         sessionStorage.setItem('kataru_audio', reader.result as string);
@@ -63,7 +71,7 @@ export default function RecordPage() {
       };
       reader.readAsDataURL(audioBlob);
     }
-  }, [audioBlob, isRecording, transcript, router]);
+  }, [audioBlob, isRecording, duration, transcript, router]);
 
   const handleTextSubmit = async () => {
     if (!textInput.trim()) return;
@@ -166,9 +174,30 @@ export default function RecordPage() {
               )}
             </div>
 
+            {/* Too short warning */}
+            {tooShortWarning && (
+              <div className="px-5 mb-4 flex flex-col items-center gap-3">
+                <p className="text-xs text-neon-magenta tracking-[1px] text-center">
+                  30秒以上録音してください
+                </p>
+                <NeonButton
+                  onClick={() => {
+                    setTooShortWarning(false);
+                    startRecording();
+                    if (isSupported) startListening();
+                  }}
+                  className="w-full"
+                >
+                  もう一度録音する
+                </NeonButton>
+              </div>
+            )}
+
             {/* Controls */}
             <div className="pb-8 px-5">
-              <RecordControls onStop={handleStop} isRecording={isRecording} />
+              {!tooShortWarning && (
+                <RecordControls onStop={handleStop} isRecording={isRecording} />
+              )}
             </div>
           </>
         ) : (
