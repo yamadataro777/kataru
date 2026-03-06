@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import CircularEqualizer from '@/components/recording/CircularEqualizer';
 import RecordTimer from '@/components/recording/RecordTimer';
@@ -21,6 +21,12 @@ export default function RecordPage() {
   const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } = useAudioRecorder();
   const frequencyData = useAudioVisualizer(analyserNode);
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll transcript to latest text
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [transcript, interimTranscript]);
 
   useEffect(() => {
     if (inputMode === 'voice') {
@@ -140,7 +146,7 @@ export default function RecordPage() {
             </div>
 
             {/* Transcript */}
-            <div className="px-5 mb-4 max-h-24 overflow-y-auto">
+            <div className="px-5 mb-4 max-h-32 overflow-y-auto" style={{ scrollBehavior: 'smooth' }}>
               {transcriptionError ? (
                 <p className="text-xs text-neon-lime opacity-70 tracking-wide text-center">
                   {transcriptionError}
@@ -151,6 +157,7 @@ export default function RecordPage() {
                   {interimTranscript && (
                     <span className="text-neon-cyan opacity-60">{interimTranscript}</span>
                   )}
+                  <span ref={transcriptEndRef} />
                 </p>
               ) : (
                 <p className="text-xs text-hud-white-dim tracking-[2px] text-center">
