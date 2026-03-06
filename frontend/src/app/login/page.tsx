@@ -10,7 +10,7 @@ type Mode = 'login' | 'signup';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signIn, signUp, user, loading } = useAuth();
+  const { signIn, signUp, user, loading, devBypass } = useAuth();
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -142,7 +142,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full bg-[rgba(0,212,255,0.03)] border border-[rgba(0,212,255,0.2)] rounded-lg px-3 py-2.5 text-xs text-hud-white tracking-wide focus:outline-none focus:border-[rgba(0,212,255,0.5)]"
+                className="w-full bg-[rgba(0,212,255,0.03)] border border-[rgba(0,212,255,0.2)] rounded-lg px-3 py-2.5 text-base text-hud-white tracking-wide focus:outline-none focus:border-[rgba(0,212,255,0.5)]"
                 placeholder="your@email.com"
               />
             </div>
@@ -157,7 +157,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                className="w-full bg-[rgba(0,212,255,0.03)] border border-[rgba(0,212,255,0.2)] rounded-lg px-3 py-2.5 text-xs text-hud-white tracking-wide focus:outline-none focus:border-[rgba(0,212,255,0.5)]"
+                className="w-full bg-[rgba(0,212,255,0.03)] border border-[rgba(0,212,255,0.2)] rounded-lg px-3 py-2.5 text-base text-hud-white tracking-wide focus:outline-none focus:border-[rgba(0,212,255,0.5)]"
                 placeholder={mode === 'signup' ? '6文字以上' : '••••••'}
               />
             </div>
@@ -173,6 +173,15 @@ export default function LoginPage() {
             </NeonButton>
           </form>
         </GlassCard>
+
+        {process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true' && (
+          <button
+            onClick={() => { devBypass(); router.push('/'); }}
+            className="mt-4 w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(255,59,122,0.3)] rounded py-2 cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
+          >
+            DEV: SKIP AUTH
+          </button>
+        )}
       </div>
     </div>
   );

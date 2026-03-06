@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
+import { initRevenueCat, isNativePlatform } from '@/lib/revenuecat';
 import type { User, Session } from '@supabase/supabase-js';
 
 export type UserPlan = 'free' | 'lite' | 'standard';
@@ -27,6 +28,7 @@ interface AuthContextType extends AuthState {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
+  devBypass: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -65,6 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let profile: UserProfile | null = null;
       if (session) {
         profile = await fetchProfile(session.access_token);
+        if (isNativePlatform()) {
+          initRevenueCat(session.user.id).catch(console.error);
+        }
       }
       setState({
         user: session?.user ?? null,
@@ -80,6 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let profile: UserProfile | null = null;
         if (session) {
           profile = await fetchProfile(session.access_token);
+          if (isNativePlatform()) {
+            initRevenueCat(session.user.id).catch(console.error);
+          }
         }
         setState({
           user: session?.user ?? null,
@@ -125,6 +133,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return session?.access_token ?? null;
   };
 
+  const devBypass = () => {
+    if (process.env.NODE_ENV !== 'development' || process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
+    setState({
+      user: { id: 'dev-user', email: 'dev@localhost' } as User,
+      session: null,
+      profile: { id: 'dev-user', plan: 'standard', session_count: 0, free_sessions_used: 0, created_at: new Date().toISOString() },
+      loading: false,
+    });
+  };
+
   return (
     <AuthContext.Provider value={{
       ...state,
@@ -133,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshProfile,
       getAccessToken,
+      devBypass,
     }}>
       {children}
     </AuthContext.Provider>

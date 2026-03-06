@@ -864,4 +864,49 @@ v2 ストレステスト（10セッション + 音声入力ストレス）は全
   - `layout.tsx` に `AuthProvider` ラッパー追加
   - `FeedbackClient.tsx` に 3 段階プラン表示
 
+---
+
+## 2026-03-05: Stripe → RevenueCat (Apple IAP) 差し替え
+
+### 背景
+iOSアプリとして配布する場合、Apple規約によりアプリ内デジタルコンテンツの販売はApp Store IAP必須。Stripe は使用不可。
+
+### 変更内容
+
+1. **Stripe コード全削除**
+   - `backend/src/services/stripe.ts` 削除
+   - `backend/src/routes/stripe.ts` 削除
+   - `backend/package.json` から `stripe` 依存削除
+   - `profiles` テーブルから `stripe_customer_id`, `stripe_subscription_id` カラム削除
+   - `frontend/src/lib/api.ts` から `createCheckoutSession`, `createPortalSession` 削除
+
+2. **RevenueCat Webhook 実装** (`backend/src/routes/revenuecat.ts`)
+   - Bearer token 認証（`REVENUECAT_WEBHOOK_AUTH_TOKEN`）
+   - `app_user_id` = Supabase user UUID
+   - イベント処理: INITIAL_PURCHASE / RENEWAL / UNCANCELLATION → plan 更新, PRODUCT_CHANGE → 新 plan 更新, EXPIRATION / BILLING_ISSUE → free に戻す, CANCELLATION → 何もしない
+   - Product ID マッピング: `kataru_lite_monthly` → `lite`, `kataru_standard_monthly` → `standard`
+
+3. **RevenueCat SDK ラッパー** (`frontend/src/lib/revenuecat.ts`)
+   - `@revenuecat/purchases-capacitor` を使用
+   - `initRevenueCat(userId)` — ネイティブ環境でのみ初期化
+   - `getOfferings()` / `purchasePackage()` / `restorePurchases()`
+   - `isNativePlatform()` — Web/ネイティブ判定
+
+4. **Pricing ページリライト** (`frontend/src/app/pricing/page.tsx`)
+   - ネイティブ: RevenueCat offerings → 購入ボタン → purchasePackage → refreshProfile
+   - Web: 「iOSアプリからご購入ください」メッセージ
+   - 「購入を復元」ボタン追加
+   - 「サブスクリプション管理」→ Apple サブスクリプション管理ページを開く
+
+5. **AuthContext に RevenueCat 初期化追加**
+   - セッション取得後・認証状態変更時に `initRevenueCat(user.id)` 呼び出し
+
+6. **DB マイグレーション** (`backend/src/migrations/004_revenuecat_migration.sql`)
+   - `stripe_customer_id`, `stripe_subscription_id` カラム削除
+   - `idx_profiles_stripe_customer_id` インデックス削除
+
+### 環境変数
+- **削除**: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_LITE`, `STRIPE_PRICE_STANDARD`, `STRIPE_WEBHOOK_SECRET`
+- **追加**: `REVENUECAT_WEBHOOK_AUTH_TOKEN` (backend), `NEXT_PUBLIC_REVENUECAT_IOS_KEY` (frontend)
+
 *このドキュメントは2026年3月5日時点の開発状況を記録したものです。*

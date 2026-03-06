@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import AuthGuard from '@/components/auth/AuthGuard';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
-import { createCheckoutSession, createPortalSession } from '@/lib/api';
+import { isNativePlatform, getOfferings, purchasePackage, restorePurchases } from '@/lib/revenuecat';
 
 const PLANS = [
   {
@@ -30,6 +30,7 @@ const PLANS = [
     period: '/ 月',
     color: 'cyan' as const,
     neonColor: 'var(--neon-cyan)',
+    packageId: 'kataru_lite_monthly',
     features: [
       '月15回の録音セッション',
       '詳細分析レポート',
@@ -45,6 +46,7 @@ const PLANS = [
     period: '/ 月',
     color: 'lime' as const,
     neonColor: 'var(--neon-lime)',
+    packageId: 'kataru_standard_monthly',
     features: [
       '無制限の録音セッション',
       '詳細分析レポート',
@@ -59,37 +61,64 @@ const PLANS = [
 
 export default function PricingPage() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const [loading, setLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const currentPlan = profile?.plan || 'free';
+  const isNative = isNativePlatform();
 
   const handleSubscribe = async (planId: 'lite' | 'standard') => {
+    if (!isNative) return;
     setLoading(planId);
+    setError(null);
     try {
-      const { url } = await createCheckoutSession(planId);
-      if (url) {
-        window.location.href = url;
+      const offerings = await getOfferings();
+      const current = offerings?.current;
+      if (!current) {
+        setError('プランの取得に失敗しました');
+        return;
       }
+
+      const plan = PLANS.find(p => p.id === planId);
+      const pkg = current.availablePackages.find(
+        (p: { identifier: string }) => p.identifier === plan?.packageId
+      );
+      if (!pkg) {
+        setError('このプランは現在利用できません');
+        return;
+      }
+
+      await purchasePackage({
+        identifier: pkg.identifier,
+        offeringIdentifier: current.identifier,
+      });
+      await refreshProfile();
     } catch (err) {
-      console.error('Checkout error:', err);
+      const message = err instanceof Error ? err.message : '購入に失敗しました';
+      if (!message.includes('cancelled') && !message.includes('canceled')) {
+        setError(message);
+      }
     } finally {
       setLoading(null);
     }
   };
 
-  const handleManage = async () => {
-    setLoading('manage');
+  const handleRestore = async () => {
+    setLoading('restore');
+    setError(null);
     try {
-      const { url } = await createPortalSession();
-      if (url) {
-        window.location.href = url;
-      }
+      await restorePurchases();
+      await refreshProfile();
     } catch (err) {
-      console.error('Portal error:', err);
+      setError(err instanceof Error ? err.message : '復元に失敗しました');
     } finally {
       setLoading(null);
     }
+  };
+
+  const handleManage = () => {
+    window.open('https://apps.apple.com/account/subscriptions', '_blank');
   };
 
   return (
@@ -109,6 +138,29 @@ export default function PricingPage() {
           </h1>
           <div className="hud-line mt-3" />
         </div>
+
+        {/* Web fallback message */}
+        {!isNative && (
+          <GlassCard className="p-5 mt-6" variant="cyan">
+            <p className="text-[11px] text-hud-white opacity-70 tracking-wide leading-relaxed">
+              プランのご購入・変更はiOSアプリからお願いいたします。
+            </p>
+          </GlassCard>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <div
+            className="mt-4 p-3 rounded text-[10px] tracking-wide"
+            style={{
+              background: 'rgba(255,59,122,0.1)',
+              border: '1px solid rgba(255,59,122,0.3)',
+              color: 'var(--neon-magenta)',
+            }}
+          >
+            {error}
+          </div>
+        )}
 
         {/* Plans */}
         <div className="flex flex-col gap-4 mt-6">
@@ -160,7 +212,7 @@ export default function PricingPage() {
                   ))}
                 </div>
 
-                {!isCurrent && plan.id !== 'free' && (
+                {isNative && !isCurrent && plan.id !== 'free' && (
                   <NeonButton
                     variant={plan.color === 'cyan' ? 'cyan' : 'lime'}
                     onClick={() => handleSubscribe(plan.id as 'lite' | 'standard')}
@@ -174,16 +226,26 @@ export default function PricingPage() {
                 {isCurrent && plan.id !== 'free' && (
                   <button
                     onClick={handleManage}
-                    disabled={loading !== null}
                     className="w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(232,237,245,0.15)] rounded py-2 cursor-pointer"
                   >
-                    {loading === 'manage' ? 'LOADING...' : 'サブスクリプション管理'}
+                    サブスクリプション管理
                   </button>
                 )}
               </GlassCard>
             );
           })}
         </div>
+
+        {/* Restore purchases */}
+        {isNative && (
+          <button
+            onClick={handleRestore}
+            disabled={loading !== null}
+            className="mt-4 mb-6 text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border-0 cursor-pointer underline opacity-60"
+          >
+            {loading === 'restore' ? '復元中...' : '購入を復元'}
+          </button>
+        )}
       </div>
     </AuthGuard>
   );

@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.kataru.app',
+  appId: 'com.kataru.voicememocom123',
   appName: 'Kataru',
   webDir: 'out',
   server: {

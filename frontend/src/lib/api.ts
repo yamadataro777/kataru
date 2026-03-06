@@ -241,6 +241,12 @@ export async function getAnalytics(): Promise<AnalyticsData> {
 
 // === Coaching API ===
 
+// === Account API ===
+
+export async function deleteAccount(): Promise<void> {
+  await request('/api/auth/account', { method: 'DELETE' });
+}
+
 export async function createCoachingSession() {
   return request('/api/coaching', { method: 'POST' });
 }
@@ -311,15 +317,4 @@ export async function submitCoachingFeedback(data: {
   return submitFeedback(data);
 }
 
-// === Stripe API ===
 
-export async function createCheckoutSession(plan: 'lite' | 'standard'): Promise<{ url: string }> {
-  return request('/api/stripe/checkout', {
-    method: 'POST',
-    body: JSON.stringify({ plan }),
-  });
-}
-
-export async function createPortalSession(): Promise<{ url: string }> {
-  return request('/api/stripe/portal', { method: 'POST' });
-}
