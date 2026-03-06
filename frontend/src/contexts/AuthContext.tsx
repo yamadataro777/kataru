@@ -28,6 +28,8 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
+  signInWithApple: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
@@ -116,6 +118,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   };
 
+  const signInWithGoogle = async () => {
+    if (!supabase) return { error: 'Supabase not configured' };
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: isNativePlatform()
+          ? 'com.kataru.voicememocom123://login-callback'
+          : `${window.location.origin}/login`,
+      },
+    });
+    return { error: error?.message ?? null };
+  };
+
+  const signInWithApple = async () => {
+    if (!supabase) return { error: 'Supabase not configured' };
+    if (isNativePlatform()) {
+      // Native Apple Sign-In on iOS
+      try {
+        const { SignInWithApple } = await import('@capacitor-community/apple-sign-in');
+        const result = await SignInWithApple.authorize({
+          clientId: 'com.kataru.voicememocom123',
+          redirectURI: 'https://nkalumkntqpeoouvehwq.supabase.co/auth/v1/callback',
+          scopes: 'email name',
+        });
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'apple',
+          token: result.response.identityToken,
+        });
+        return { error: error?.message ?? null };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Apple Sign-In failed';
+        if (msg.includes('cancelled') || msg.includes('canceled')) return { error: null };
+        return { error: msg };
+      }
+    } else {
+      // Web fallback: OAuth redirect
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: {
+          redirectTo: `${window.location.origin}/login`,
+        },
+      });
+      return { error: error?.message ?? null };
+    }
+  };
+
   const signOut = async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
@@ -160,6 +208,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...state,
       signUp,
       signIn,
+      signInWithGoogle,
+      signInWithApple,
       signOut,
       refreshProfile,
       getAccessToken,
