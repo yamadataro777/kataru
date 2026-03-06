@@ -5,15 +5,20 @@ import { useRouter } from 'next/navigation';
 import CircularEqualizer from '@/components/recording/CircularEqualizer';
 import RecordTimer from '@/components/recording/RecordTimer';
 import RecordControls from '@/components/recording/RecordControls';
+import StimulusPrompt from '@/components/recording/StimulusPrompt';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
 import useTranscription from '@/hooks/useTranscription';
+import useSilenceDetector from '@/hooks/useSilenceDetector';
+import { selectNextQuestion, integrationPrompt } from '@/data/stimulusQuestions';
 import AuthGuard from '@/components/auth/AuthGuard';
 import NeonButton from '@/components/ui/NeonButton';
 
 type InputMode = 'voice' | 'text';
+type RecordingPhase = 'free' | 'stimulation' | 'integration';
 
 const MIN_RECORDING_SECONDS = 30;
+const STIMULATION_START_SECONDS = 60;
 
 export default function RecordPage() {
   const router = useRouter();
@@ -25,6 +30,63 @@ export default function RecordPage() {
   const frequencyData = useAudioVisualizer(analyserNode);
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // Stimulus question state
+  const [currentPhase, setCurrentPhase] = useState<RecordingPhase>('free');
+  const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
+  const [questionVisible, setQuestionVisible] = useState(false);
+  const [showIntegrationOverlay, setShowIntegrationOverlay] = useState(false);
+  const shownQuestionsRef = useRef<Set<string>>(new Set());
+  const questionCooldownRef = useRef(false);
+  const questionsShownCountRef = useRef(0);
+
+  // Silence detection — only active during stimulation phase
+  const { silenceTriggered, resetTrigger } = useSilenceDetector(frequencyData, {
+    enabled: inputMode === 'voice' && isRecording && currentPhase === 'stimulation' && !questionCooldownRef.current && activeQuestion === null,
+  });
+
+  // Phase transition: free → stimulation based on duration
+  useEffect(() => {
+    if (currentPhase === 'free' && duration >= STIMULATION_START_SECONDS) {
+      setCurrentPhase('stimulation');
+    }
+  }, [duration, currentPhase]);
+
+  // Silence triggered → show question
+  useEffect(() => {
+    if (!silenceTriggered || currentPhase !== 'stimulation' || questionCooldownRef.current || activeQuestion !== null) return;
+
+    const question = selectNextQuestion(shownQuestionsRef.current, questionsShownCountRef.current);
+    if (!question) return;
+
+    shownQuestionsRef.current.add(question.id);
+    questionsShownCountRef.current += 1;
+    setActiveQuestion(question.text);
+    setQuestionVisible(true);
+    questionCooldownRef.current = true;
+    resetTrigger();
+
+    // Fade out after 5.5s
+    const fadeTimer = setTimeout(() => {
+      setQuestionVisible(false);
+    }, 5500);
+
+    // Clear question after fade-out animation (0.4s)
+    const clearTimer = setTimeout(() => {
+      setActiveQuestion(null);
+    }, 5900);
+
+    // Cooldown ends 4s after question is cleared
+    const cooldownTimer = setTimeout(() => {
+      questionCooldownRef.current = false;
+    }, 9900);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(clearTimer);
+      clearTimeout(cooldownTimer);
+    };
+  }, [silenceTriggered, currentPhase, activeQuestion, resetTrigger]);
 
   // Auto-scroll transcript to latest text
   useEffect(() => {
@@ -53,6 +115,23 @@ export default function RecordPage() {
   }, [isRecording, inputMode]);
 
   const handleStop = useCallback(() => {
+    // If recording is long enough, show integration overlay
+    if (duration >= STIMULATION_START_SECONDS) {
+      // Dismiss any active stimulus question
+      setActiveQuestion(null);
+      setQuestionVisible(false);
+      setCurrentPhase('integration');
+      setShowIntegrationOverlay(true);
+      // Recording + transcription continue
+      return;
+    }
+    // Short recording — stop immediately
+    stopRecording();
+    stopListening();
+  }, [duration, stopRecording, stopListening]);
+
+  const handleIntegrationComplete = useCallback(() => {
+    setShowIntegrationOverlay(false);
     stopRecording();
     stopListening();
   }, [stopRecording, stopListening]);
@@ -73,10 +152,22 @@ export default function RecordPage() {
     }
   }, [audioBlob, isRecording, duration, transcript, router]);
 
+  // Reset stimulus state when re-recording
+  useEffect(() => {
+    if (isRecording) {
+      setCurrentPhase('free');
+      setActiveQuestion(null);
+      setQuestionVisible(false);
+      setShowIntegrationOverlay(false);
+      shownQuestionsRef.current = new Set();
+      questionCooldownRef.current = false;
+      questionsShownCountRef.current = 0;
+    }
+  }, [isRecording]);
+
   const handleTextSubmit = async () => {
     if (!textInput.trim()) return;
     setTextSubmitting(true);
-    // For text mode, store the transcript directly and skip audio upload
     sessionStorage.setItem('kataru_transcript', textInput.trim());
     sessionStorage.removeItem('kataru_audio');
     router.push('/processing');
@@ -174,6 +265,9 @@ export default function RecordPage() {
               )}
             </div>
 
+            {/* Stimulus Question */}
+            <StimulusPrompt question={activeQuestion} visible={questionVisible} />
+
             {/* Too short warning */}
             {tooShortWarning && (
               <div className="px-5 mb-4 flex flex-col items-center gap-3">
@@ -199,6 +293,68 @@ export default function RecordPage() {
                 <RecordControls onStop={handleStop} isRecording={isRecording} />
               )}
             </div>
+
+            {/* Integration Overlay */}
+            {showIntegrationOverlay && (
+              <div
+                className="fixed inset-0 z-50 flex flex-col items-center justify-center px-8"
+                style={{ background: 'rgba(10,14,26,0.85)' }}
+              >
+                <div
+                  className="rounded-lg px-6 py-8 w-full max-w-sm text-center"
+                  style={{
+                    background: 'rgba(16,22,42,0.9)',
+                    border: '1px solid var(--glass-border)',
+                  }}
+                >
+                  <p
+                    className="text-[10px] tracking-[2px] mb-6"
+                    style={{ color: 'var(--neon-cyan)', opacity: 0.6 }}
+                  >
+                    INTEGRATION
+                  </p>
+                  <p
+                    className="text-sm tracking-[1px] leading-7 mb-8"
+                    style={{
+                      color: 'var(--neon-lime)',
+                      textShadow: '0 0 12px rgba(168,255,0,0.3)',
+                    }}
+                  >
+                    {integrationPrompt}
+                  </p>
+                  <p
+                    className="text-[9px] tracking-[1px] mb-6"
+                    style={{ color: 'var(--hud-white)', opacity: 0.4 }}
+                  >
+                    録音は続いています。声に出して答えてみてください。
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleIntegrationComplete}
+                      className="flex-1 py-3 rounded text-[10px] tracking-[2px] cursor-pointer"
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid rgba(232,237,245,0.2)',
+                        color: 'rgba(232,237,245,0.5)',
+                      }}
+                    >
+                      SKIP
+                    </button>
+                    <button
+                      onClick={handleIntegrationComplete}
+                      className="flex-1 py-3 rounded text-[10px] tracking-[2px] cursor-pointer"
+                      style={{
+                        background: 'rgba(0,212,255,0.1)',
+                        border: '1px solid rgba(0,212,255,0.4)',
+                        color: 'var(--neon-cyan)',
+                      }}
+                    >
+                      DONE
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <>
