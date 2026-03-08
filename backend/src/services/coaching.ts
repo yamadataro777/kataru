@@ -264,7 +264,9 @@ export class CoachingService {
   }
 
   async createSession(userId?: string): Promise<CoachingConversation> {
-    const conv = await createConversation(userId);
+    // Don't pass userId to createConversation — conversations table has no user_id column.
+    // Instead, link via coaching_conversations table.
+    const conv = await createConversation();
     const initialRc = {
       current_stage: 1,
       stage_mode: null,
@@ -280,6 +282,17 @@ export class CoachingService {
       issues_prioritized: false,
     };
     await updateConversation(conv.id, { running_context: initialRc as unknown as Record<string, unknown> });
+
+    // Link user to coaching session via coaching_conversations table
+    // Skip for dev-user (not a valid UUID, would violate FK constraint)
+    if (userId && userId !== 'dev-user') {
+      const { supabase } = await import('./supabase');
+      await supabase.from('coaching_conversations').insert({
+        id: conv.id,
+        user_id: userId,
+      });
+    }
+
     return this.toCoachingConversation(conv, initialRc as Record<string, unknown>);
   }
 
