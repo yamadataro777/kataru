@@ -68,7 +68,7 @@ export default function useAudioRecorder(): AudioRecorderResult {
         setAnalyserNode(null);
       };
 
-      mediaRecorder.start(250);
+      mediaRecorder.start();
       setIsRecording(true);
       setAudioBlob(null);
       setDuration(0);

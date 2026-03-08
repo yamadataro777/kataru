@@ -1,5 +1,17 @@
 # Git Worktree Log
 
+## 2026-03-08
+- **Branch**: kaizen-hypothesis
+- **Action**: commit + push
+- **Commit**: Fix iOS dialogue transcription: remove timeslice and upgrade Whisper model
+- **Changes**: useAudioRecorder start(250)→start()でiOS MP4チャンク破損を解消。coaching transcribeをgpt-4o-transcribeに統一、ハルシネーション除去追加。
+
+## 2026-03-08
+- **Branch**: kaizen-hypothesis
+- **Action**: commit + push
+- **Commit**: c9fc3b3 Split dialogue transcription and AI analysis into separate requests for iOS
+- **Changes**: iOS WKWebView対応 — Whisper文字起こしとGemini分析を2リクエストに分割してRenderタイムアウト回避。TRANSCRIBING UIステート追加。
+
 ## 2026-03-06 (session start)
 - **Branch**: Record-exp-improve
 - **Action**: commit + push

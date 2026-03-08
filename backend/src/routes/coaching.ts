@@ -4,6 +4,7 @@ import { coachingService } from '../services/coaching';
 import { getConversationWithTurns } from '../services/conversation';
 import { supabase } from '../services/supabase';
 import type { CoachingStage, StageMode } from '../types/conversation';
+import { cleanTranscript } from '../utils/clean-transcript';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
@@ -92,11 +93,39 @@ router.post('/transcribe', upload.single('audio'), async (req: Request, res: Res
     const file = await toFile(audioBuffer, `recording.${ext}`, { type: mimeType });
     const whisperRes = await openai.audio.transcriptions.create({
       file,
-      model: 'whisper-1',
+      model: 'gpt-4o-transcribe',
       language: 'ja',
+      prompt: '日本語の対話セッション。コーチングや自己分析についての会話。',
     });
 
-    const transcript = whisperRes.text.trim();
+    // Whisperハルシネーション除去（transcribe.tsと同じパターン）
+    let transcript = whisperRes.text;
+    const hallucinations = [
+      /ご視聴ありがとうございました。?/g,
+      /ご視聴いただきありがとうございました。?/g,
+      /ご視聴ありがとうございます。?/g,
+      /ご視聴いただきありがとうございます。?/g,
+      /最後までご覧いただきありがとうございました。?/g,
+      /最後までご視聴いただきありがとうございました。?/g,
+      /チャンネル登録お願いします。?/g,
+      /チャンネル登録よろしくお願いします。?/g,
+      /高評価お願いします。?/g,
+      /いいねとチャンネル登録をお願いします。?/g,
+      /グッドボタン.*お願いします。?/g,
+      /字幕は自動生成されています。?/g,
+      /字幕提供.*$/g,
+      /サブタイトル.*$/g,
+      /お疲れ様でした。?/g,
+      /おやすみなさい。?/g,
+      /ではまた。?/g,
+      /また次の動画でお会いしましょう。?/g,
+      /次回もお楽しみに。?/g,
+      /ありがとうございました。?$/g,
+    ];
+    for (const pattern of hallucinations) {
+      transcript = transcript.replace(pattern, '');
+    }
+    transcript = cleanTranscript(transcript.trim());
     res.json({ transcript });
   } catch (err) {
     console.error('Coaching transcribe error:', err);
