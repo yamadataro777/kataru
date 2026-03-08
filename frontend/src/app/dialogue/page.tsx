@@ -77,7 +77,7 @@ export default function DialoguePage() {
     [1, 2, 3, 4] as CoachingStage[]
   ).filter((s) => s < currentStage && stageSummaries[String(s)]);
 
-  const isProcessing = uiState === 'PROCESSING';
+  const isProcessing = uiState === 'PROCESSING' || uiState === 'TRANSCRIBING';
 
   // ─── Server waking state ──────────────────────────────────────────────────
   if (isWaking) {
@@ -267,6 +267,7 @@ export default function DialoguePage() {
         turns={turns}
         isProcessing={isProcessing}
         currentStage={currentStage}
+        uiState={uiState}
       />
 
       {/* Mode switch suggestion banner */}
@@ -304,7 +305,7 @@ export default function DialoguePage() {
         style={{ borderTop: '1px solid rgba(0,212,255,0.1)' }}
       >
         {/* Advance stage button */}
-        {(uiState === 'RECORDING' || uiState === 'PROCESSING') && (
+        {(uiState === 'RECORDING' || uiState === 'PROCESSING' || uiState === 'TRANSCRIBING') && (
           <AdvanceStageButton
             canAdvance={canAdvance}
             currentStage={currentStage}

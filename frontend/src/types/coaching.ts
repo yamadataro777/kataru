@@ -70,7 +70,7 @@ export type QuestionFunction = 'clarify_detail' | 'narrow_scope' | 'choose_focus
 export type GoalReadiness = 'not_ready' | 'approaching' | 'ready';
 
 export type StageMode = 'logical' | 'emotional';
-export type UIState = 'MODE_SELECT' | 'RECORDING' | 'PROCESSING' | 'STAGE_COMPLETE' | 'SESSION_COMPLETE';
+export type UIState = 'MODE_SELECT' | 'RECORDING' | 'TRANSCRIBING' | 'PROCESSING' | 'STAGE_COMPLETE' | 'SESSION_COMPLETE';
 
 export interface Stage1LogicalData {
   central_problem: string | null;

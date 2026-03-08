@@ -262,6 +262,32 @@ export async function deleteAccount(): Promise<void> {
   await request('/api/auth/account', { method: 'DELETE' });
 }
 
+export async function transcribeCoachingAudio(audio: Blob): Promise<{ transcript: string }> {
+  const ext = audio.type.includes('mp4') ? 'mp4' : audio.type.includes('wav') ? 'wav' : 'webm';
+  const formData = new FormData();
+  formData.append('audio', audio, `recording.${ext}`);
+  const signal = createTimeoutSignal(30_000);
+  const authHeaders = await getAuthHeaders();
+  try {
+    const res = await fetch(`${BASE_URL}/api/coaching/transcribe`, {
+      method: 'POST',
+      body: formData,
+      headers: authHeaders,
+      signal,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(body.message || body.error || '文字起こしに失敗しました');
+    }
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('文字起こしがタイムアウトしました。再試行してください。');
+    }
+    throw err;
+  }
+}
+
 export async function createCoachingSession() {
   return request('/api/coaching', { method: 'POST' });
 }

@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { CoachingTurn, CoachingStage } from '../../types/coaching';
+import type { CoachingTurn, CoachingStage, UIState } from '../../types/coaching';
 
 interface CoachingConversationThreadProps {
   turns: CoachingTurn[];
   isProcessing: boolean;
   currentStage: CoachingStage;
+  uiState?: UIState;
 }
 
 const STAGE_LABELS: Record<number, string> = {
@@ -24,6 +25,7 @@ export function CoachingConversationThread({
   turns,
   isProcessing,
   currentStage,
+  uiState,
 }: CoachingConversationThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -101,11 +103,11 @@ export function CoachingConversationThread({
       })}
 
       {/* Processing indicator */}
-      {isProcessing && (
+      {(isProcessing || uiState === 'TRANSCRIBING') && (
         <div className="flex justify-start">
           <div className="max-w-[85%]">
             <div className="text-[10px] text-gray-600 font-mono mb-1 tracking-wider">
-              AI COACH · 分析中...
+              AI COACH · {uiState === 'TRANSCRIBING' ? '文字起こし中...' : '分析中...'}
             </div>
             <div
               className="rounded-lg px-3 py-2 font-mono text-sm"

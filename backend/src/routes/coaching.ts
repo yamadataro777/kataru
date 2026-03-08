@@ -73,6 +73,37 @@ router.post('/:id/initial', async (req: Request<{ id: string }>, res: Response) 
   }
 });
 
+// POST /api/coaching/transcribe - Transcribe audio only (no AI analysis)
+router.post('/transcribe', upload.single('audio'), async (req: Request, res: Response) => {
+  try {
+    const audioBuffer = req.file?.buffer;
+    const mimeType = req.file?.mimetype;
+
+    if (!audioBuffer || !mimeType) {
+      res.status(400).json({ error: '音声ファイルが必要です' });
+      return;
+    }
+
+    const OpenAI = (await import('openai')).default;
+    const { toFile } = await import('openai');
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('wav') ? 'wav' : 'webm';
+    const file = await toFile(audioBuffer, `recording.${ext}`, { type: mimeType });
+    const whisperRes = await openai.audio.transcriptions.create({
+      file,
+      model: 'whisper-1',
+      language: 'ja',
+    });
+
+    const transcript = whisperRes.text.trim();
+    res.json({ transcript });
+  } catch (err) {
+    console.error('Coaching transcribe error:', err);
+    res.status(500).json({ error: '文字起こしに失敗しました' });
+  }
+});
+
 // POST /api/coaching/:id/turns - Submit a turn
 router.post('/:id/turns', upload.single('audio'), async (req: Request<{ id: string }>, res: Response) => {
   try {

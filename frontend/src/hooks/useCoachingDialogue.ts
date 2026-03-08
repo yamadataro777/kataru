@@ -17,6 +17,7 @@ import {
   submitCoachingTurn,
   advanceCoachingStage,
   endCoachingSession,
+  transcribeCoachingAudio,
 } from '../lib/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -175,18 +176,31 @@ export function useCoachingDialogue() {
 
       setState((prev) => ({
         ...prev,
-        uiState: 'PROCESSING',
+        uiState: transcript ? 'PROCESSING' : 'TRANSCRIBING',
         turns: [...prev.turns, userTurn],
         error: null,
       }));
 
       try {
-        // When client transcript is available, skip audio upload to avoid
-        // Render timeout (audio upload + Whisper + Gemini > 30s).
-        // Only send audio as fallback when Web Speech API produced no transcript.
+        // When no client transcript (iOS WKWebView), transcribe audio first
+        // in a separate request to avoid Render timeout.
+        let finalTranscript = transcript;
+        if (!finalTranscript && audioBlob) {
+          const { transcript: whisperTranscript } = await transcribeCoachingAudio(audioBlob);
+          finalTranscript = whisperTranscript;
+          // Update the optimistic user turn with the transcribed text
+          setState((prev) => ({
+            ...prev,
+            uiState: 'PROCESSING',
+            turns: prev.turns.map((t) =>
+              t.id === userTurn.id ? { ...t, user_transcript: finalTranscript || null } : t
+            ),
+          }));
+        }
+
+        // Send text-only to coaching turn (no audio upload needed)
         const result = await submitCoachingTurn(state.conversationId, {
-          audio: transcript ? undefined : audioBlob,
-          transcript,
+          transcript: finalTranscript,
           stage: state.currentStage,
           mode: state.stageMode || undefined,
         });
