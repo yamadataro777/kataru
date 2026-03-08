@@ -8,8 +8,13 @@ import GlassCard from '@/components/ui/GlassCard';
 import { getSessions, generateReport } from '@/lib/api';
 import { Session } from '@/types/session';
 
-function getIncubationBadge(session: Session): { label: string; color: string; border: string } | null {
-  if (session.status !== 'completed' || session.user_conclusion) return null;
+function getSessionBadge(session: Session): { label: string; color: string; border: string } | null {
+  if (session.status !== 'completed') return null;
+  // Conclusion reached — show completion badge
+  if (session.user_conclusion) {
+    return { label: '結論済', color: 'var(--neon-lime)', border: 'rgba(168,255,0,0.25)' };
+  }
+  // Incubation badges for sessions without conclusion
   const daysElapsed = Math.floor((Date.now() - new Date(session.created_at).getTime()) / 86400000);
   if (daysElapsed < 1) return null;
   if (daysElapsed >= 7) {
@@ -62,7 +67,7 @@ export default function HistoryClient() {
     <div className="flex flex-col min-h-dvh">
       <Header />
 
-      <div className="flex-1 px-5 pb-20">
+      <div className="flex-1 px-5 pb-20 overflow-y-auto" style={{ overscrollBehaviorY: 'contain' }}>
         <div className="mt-4 mb-5">
           <span className="label">SESSION HISTORY</span>
           {topicFilter ? (
@@ -101,7 +106,7 @@ export default function HistoryClient() {
         ) : (
           <div className="flex flex-col gap-3">
             {filtered.map((session) => {
-              const badge = getIncubationBadge(session);
+              const badge = getSessionBadge(session);
               return (
                 <GlassCard
                   key={session.id}

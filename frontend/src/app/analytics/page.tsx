@@ -36,7 +36,7 @@ export default function AnalyticsPage() {
       <div className="flex flex-col min-h-dvh">
         <Header />
 
-        <div className="flex-1 px-5 pb-20">
+        <div className="flex-1 px-5 pb-20 overflow-y-auto" style={{ overscrollBehaviorY: 'contain' }}>
           <div className="mt-4 mb-5">
             <span className="label">THINKING MAP</span>
             <h2 className="text-lg font-bold tracking-[2px] mt-1">思考マップ</h2>
