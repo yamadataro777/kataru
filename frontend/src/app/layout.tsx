@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import ScanLines from '@/components/ui/ScanLines';
+import OfflineBanner from '@/components/ui/OfflineBanner';
 import { AuthProvider } from '@/contexts/AuthContext';
 
 export const metadata: Metadata = {
@@ -35,6 +36,7 @@ export default function RootLayout({
         className="antialiased"
       >
         <AuthProvider>
+          <OfflineBanner />
           <div className="relative w-full max-w-[390px] min-h-dvh mx-auto bg-bg-primary overflow-hidden">
             {children}
           </div>

@@ -22,6 +22,10 @@ export async function initRevenueCat(userId: string): Promise<void> {
     return;
   }
 
+  if (apiKey.startsWith('test_')) {
+    console.warn('[RevenueCat] Using TEST API key. Switch to production key before App Store submission.');
+  }
+
   const Purchases = await getPurchases();
   await Purchases.configure({ apiKey, appUserID: userId });
 }
