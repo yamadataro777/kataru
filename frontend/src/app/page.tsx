@@ -7,6 +7,7 @@ import StatsGrid from '@/components/dashboard/StatsGrid';
 import StartModeSelector from '@/components/dashboard/StartModeSelector';
 import RecentSessions from '@/components/dashboard/RecentSessions';
 import TrialJourney from '@/components/dashboard/TrialJourney';
+import GlassCard from '@/components/ui/GlassCard';
 import AuthGuard from '@/components/auth/AuthGuard';
 import { useRouter } from 'next/navigation';
 import { getSessions, getAnalytics, getConversations } from '@/lib/api';
@@ -62,6 +63,43 @@ export default function HomePage() {
               totalDuration={analytics.totalDuration}
             />
           </div>
+
+          {/* Revisit Prompt - Step 3c */}
+          {(() => {
+            const readyForRevisit = sessions.filter(s => {
+              if (s.status !== 'completed' || s.user_conclusion) return false;
+              const daysElapsed = Math.floor((Date.now() - new Date(s.created_at).getTime()) / 86400000);
+              return daysElapsed >= 3;
+            }).slice(0, 3);
+            if (readyForRevisit.length === 0) return null;
+            return (
+              <div className="mt-4">
+                <span className="label mb-2 block">再考の準備ができたセッション</span>
+                <div className="flex flex-col gap-2">
+                  {readyForRevisit.map(s => {
+                    const daysAgo = Math.floor((Date.now() - new Date(s.created_at).getTime()) / 86400000);
+                    return (
+                      <GlassCard
+                        key={s.id}
+                        className="p-3 cursor-pointer transition-all hover:border-[rgba(0,212,255,0.35)]"
+                        variant="cyan"
+                        onClick={() => router.push(`/results?id=${s.id}`)}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-bold tracking-wide text-hud-white truncate" style={{ fontFamily: 'sans-serif' }}>
+                            {s.report?.title || 'Untitled'}
+                          </span>
+                          <span className="text-[10px] text-hud-white-dim tracking-[1px] flex-shrink-0 ml-2">
+                            {daysAgo}日前
+                          </span>
+                        </div>
+                      </GlassCard>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           <StartModeSelector />
 

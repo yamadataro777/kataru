@@ -1,5 +1,7 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+
 interface TopicTagsProps {
   topics: string[];
 }
@@ -11,14 +13,17 @@ const tagColors = [
 ];
 
 export default function TopicTags({ topics }: TopicTagsProps) {
+  const router = useRouter();
+
   return (
     <div className="flex flex-wrap gap-2">
       {topics.map((topic, i) => {
         const color = tagColors[i % tagColors.length];
         return (
-          <span
+          <button
             key={i}
-            className="px-3 py-1.5 rounded-full text-[10px] font-bold tracking-[2px] uppercase"
+            onClick={() => router.push(`/history?topic=${encodeURIComponent(topic)}`)}
+            className="px-3 py-1.5 rounded-full text-[10px] font-bold tracking-[2px] uppercase cursor-pointer transition-all hover:opacity-80"
             style={{
               border: `1px solid ${color.border}`,
               background: color.bg,
@@ -26,7 +31,7 @@ export default function TopicTags({ topics }: TopicTagsProps) {
             }}
           >
             {topic}
-          </span>
+          </button>
         );
       })}
     </div>

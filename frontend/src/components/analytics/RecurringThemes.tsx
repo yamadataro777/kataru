@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import GlassCard from '@/components/ui/GlassCard';
 import { TopicCount } from '@/lib/api';
 
@@ -14,6 +15,7 @@ const BADGE_COLORS = [
 ];
 
 export default function RecurringThemes({ topicCounts }: RecurringThemesProps) {
+  const router = useRouter();
   const recurring = topicCounts.filter((t) => t.count >= 2);
   const oneTime = topicCounts.filter((t) => t.count === 1);
 
@@ -43,9 +45,10 @@ export default function RecurringThemes({ topicCounts }: RecurringThemesProps) {
           {recurring.map((t, i) => {
             const color = BADGE_COLORS[i % BADGE_COLORS.length];
             return (
-              <span
+              <button
                 key={t.topic}
-                className="px-3 py-1.5 rounded-full text-[11px] font-bold tracking-[1px]"
+                onClick={() => router.push(`/history?topic=${encodeURIComponent(t.topic)}`)}
+                className="px-3 py-1.5 rounded-full text-[11px] font-bold tracking-[1px] cursor-pointer transition-all hover:opacity-80"
                 style={{
                   border: `1px solid ${color.border}`,
                   background: color.bg,
@@ -54,7 +57,7 @@ export default function RecurringThemes({ topicCounts }: RecurringThemesProps) {
                 }}
               >
                 {t.topic} ×{t.count}
-              </span>
+              </button>
             );
           })}
         </div>
@@ -69,9 +72,10 @@ export default function RecurringThemes({ topicCounts }: RecurringThemesProps) {
           )}
           <div className="flex flex-wrap gap-1.5">
             {oneTime.map((t) => (
-              <span
+              <button
                 key={t.topic}
-                className="px-2 py-1 rounded-full text-[10px] tracking-[1px]"
+                onClick={() => router.push(`/history?topic=${encodeURIComponent(t.topic)}`)}
+                className="px-2 py-1 rounded-full text-[10px] tracking-[1px] cursor-pointer transition-all hover:opacity-80"
                 style={{
                   border: '1px solid rgba(232,237,245,0.15)',
                   background: 'rgba(232,237,245,0.04)',
@@ -80,7 +84,7 @@ export default function RecurringThemes({ topicCounts }: RecurringThemesProps) {
                 }}
               >
                 {t.topic}
-              </span>
+              </button>
             ))}
           </div>
         </>

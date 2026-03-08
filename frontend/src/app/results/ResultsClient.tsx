@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getSession, updateSession } from '@/lib/api';
+import { getSession, getSessions, updateSession } from '@/lib/api';
 import { Session } from '@/types/session';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSessionPhase, shouldShowFeedbackAfterResults } from '@/lib/session-tracker';
@@ -24,6 +24,12 @@ export default function ResultsClient() {
   const [conclusion, setConclusion] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pastConclusion, setPastConclusion] = useState<{
+    topic: string;
+    conclusion: string;
+    date: string;
+    sessionId: string;
+  } | null>(null);
 
   const plan = profile?.plan || 'free';
   const freeSessionsUsed = profile?.free_sessions_used || 0;
@@ -51,6 +57,26 @@ export default function ResultsClient() {
       .catch(() => setSession(null))
       .finally(() => setLoading(false));
   }, [searchParams]);
+
+  // Fetch past conclusion with matching topic (Step 4a)
+  useEffect(() => {
+    if (!session?.report?.topics) return;
+    getSessions().then(all => {
+      const past = all
+        .filter(s => s.id !== session.id && s.user_conclusion && s.status === 'completed')
+        .filter(s => s.report?.topics?.some(t => session.report!.topics.includes(t)))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      if (past[0]) {
+        const sharedTopic = past[0].report!.topics.find(t => session.report!.topics.includes(t))!;
+        setPastConclusion({
+          topic: sharedTopic,
+          conclusion: past[0].user_conclusion!,
+          date: past[0].created_at,
+          sessionId: past[0].id,
+        });
+      }
+    }).catch(() => {});
+  }, [session]);
 
   const handleSaveConclusion = async () => {
     const s = sessionRef.current;
@@ -265,6 +291,65 @@ export default function ResultsClient() {
             </div>
           </GlassCard>
         )}
+
+        {/* Past Conclusion - Step 4a */}
+        {pastConclusion && (
+          <GlassCard className="p-4">
+            <span className="label mb-3 block">前回の思考</span>
+            <p className="text-xs leading-6 text-hud-white-dim tracking-wide mb-2" style={{ fontFamily: 'sans-serif' }}>
+              「{pastConclusion.topic}」について、
+              {Math.floor((Date.now() - new Date(pastConclusion.date).getTime()) / 86400000)}日前にあなたはこう結論しました:
+            </p>
+            <div
+              className="rounded-md px-3 py-2.5 mb-3"
+              style={{
+                background: 'rgba(232,237,245,0.04)',
+                border: '1px solid rgba(232,237,245,0.12)',
+              }}
+            >
+              <p className="text-sm leading-7 text-hud-white opacity-85 tracking-wide" style={{ fontFamily: 'sans-serif' }}>
+                「{pastConclusion.conclusion}」
+              </p>
+            </div>
+            <p className="text-xs text-neon-cyan tracking-wide" style={{ fontFamily: 'sans-serif' }}>
+              今回も同じ結論ですか？ それとも、何か変わりましたか？
+            </p>
+          </GlassCard>
+        )}
+
+        {/* Incubation Message - Step 3a */}
+        {(() => {
+          if (session.user_conclusion) return null;
+          const daysElapsed = Math.floor((Date.now() - new Date(session.created_at).getTime()) / 86400000);
+          if (daysElapsed >= 3) {
+            return (
+              <GlassCard className="p-4" variant="lime">
+                <span className="text-[9px] tracking-[3px] font-bold block mb-2" style={{ color: 'var(--neon-lime)' }}>INCUBATION</span>
+                <p className="text-xs leading-6 tracking-wide" style={{ color: 'var(--neon-lime)', fontFamily: 'sans-serif' }}>
+                  十分な時間が経ちました。今のあなたなら、より本質的な結論が書けるはずです。
+                </p>
+              </GlassCard>
+            );
+          }
+          if (daysElapsed >= 1) {
+            return (
+              <GlassCard className="p-4" variant="cyan">
+                <span className="label mb-2 block">INCUBATION</span>
+                <p className="text-xs leading-6 text-neon-cyan tracking-wide" style={{ fontFamily: 'sans-serif' }}>
+                  {daysElapsed}日が経ちました。最初の印象とは違う見方が芽生えていませんか？
+                </p>
+              </GlassCard>
+            );
+          }
+          return (
+            <GlassCard className="p-4" variant="cyan">
+              <span className="label mb-2 block">INCUBATION</span>
+              <p className="text-xs leading-6 text-neon-cyan tracking-wide" style={{ fontFamily: 'sans-serif' }}>
+                まだ記憶が新しいうちです。少し寝かせてから、改めて結論を書いてみませんか？
+              </p>
+            </GlassCard>
+          );
+        })()}
 
         {/* Your Conclusion */}
         <GlassCard className="p-4" variant="lime">

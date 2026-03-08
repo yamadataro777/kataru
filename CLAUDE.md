@@ -80,6 +80,12 @@ npm -w frontend run lint
 
 No test framework is configured.
 
+### Xcode で開く
+「Xcodeで開いて」と指示されたら、以下をすべて実行すること:
+1. `cd frontend && npm run build` — 静的ファイルを `/out` に書き出す
+2. `npx cap sync ios` — Web アセットを iOS プロジェクトにコピー＋Pod install
+3. `open frontend/ios/App/App.xcworkspace` — Xcode を開く
+
 ## Architecture
 
 **Monorepo** with npm workspaces: `frontend/` and `backend/`.

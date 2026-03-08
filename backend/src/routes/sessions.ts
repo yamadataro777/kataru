@@ -46,7 +46,13 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    res.json(data);
+
+    const topic = req.query.topic as string | undefined;
+    const result = topic
+      ? (data || []).filter((s: any) => s.report?.topics?.includes(topic))
+      : data;
+
+    res.json(result);
   } catch (error) {
     console.error('Error listing sessions:', error);
     res.status(500).json({ error: 'Failed to list sessions' });

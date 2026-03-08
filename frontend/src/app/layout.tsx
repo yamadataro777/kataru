@@ -1,8 +1,16 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import ScanLines from '@/components/ui/ScanLines';
 import OfflineBanner from '@/components/ui/OfflineBanner';
 import { AuthProvider } from '@/contexts/AuthContext';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+};
 
 export const metadata: Metadata = {
   title: 'KATARU — 声で考えを整理するAIツール',

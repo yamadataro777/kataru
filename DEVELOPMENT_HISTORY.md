@@ -940,4 +940,37 @@ INTP_Youtube_Videoプロジェクトで定義された「思考整理アプリ V
 - 結論記入は強制しない（存在するだけで意味がある設計）
 - サイバーパンクHUD美学は変更なし
 
+---
+
+## Step 3（時間的隔離）+ Step 4（批判的再訪）実装 — 2026-03-08
+
+YouTube台本で提示した5ステップ思考フレームワークのうち、Step 3（寝かせる）とStep 4（批判的再訪）を実装。
+
+### 実装内容
+
+#### Step 3: 時間的隔離（Incubation）
+- **Results画面: 熟成メッセージ** — セッション経過時間に応じた3段階のメッセージ表示（<24h / 1-3日 / 3日+）。結論未記入時のみ表示
+- **History画面: 熟成バッジ** — 「未回答」バッジを時間認識型に拡張（寝かせ中 / 再考の時）
+- **Home画面: 再考プロンプト** — 3日以上経過・結論未記入のセッションを最大3件表示
+
+#### Step 4: 批判的再訪（Critical Revisit）
+- **Results画面: 前回の思考** — 同一トピックの過去セッションで書かれた結論を表示し、思考の変化を促す
+- **トピッククリッカブル化** — TopicTags・RecurringThemesのタグをタップ→`/history?topic=X`に遷移
+- **History: トピックフィルタ** — `/history?topic=キャリア`でフィルタ表示、結論プレビュー付き
+- **Backend: topicクエリパラメータ** — `GET /api/sessions?topic=X` でJS側フィルタ
+
+### 変更ファイル
+- `frontend/src/app/results/ResultsClient.tsx` — 熟成メッセージ + 前回の思考
+- `frontend/src/app/history/page.tsx` → Suspenseラッパーに分離
+- `frontend/src/app/history/HistoryClient.tsx` — 熟成バッジ + トピックフィルタ + 結論プレビュー（新規）
+- `frontend/src/app/page.tsx` — 再考プロンプトセクション
+- `frontend/src/components/report/TopicTags.tsx` — クリッカブル化
+- `frontend/src/components/analytics/RecurringThemes.tsx` — クリッカブル化
+- `backend/src/routes/sessions.ts` — topicクエリパラメータ追加
+
+### 設計判断
+- プッシュ通知は入れない（APNs + バックエンドスケジューラ工数が大きい。アプリ内UIで十分）
+- 新規DBテーブルなし（既存の`report->'topics'` JSONBをJS側でフィルタ）
+- History画面をpage.tsx + HistoryClient.tsxに分離（Next.js Suspense要件）
+
 *このドキュメントは2026年3月8日時点の開発状況を記録したものです。*
