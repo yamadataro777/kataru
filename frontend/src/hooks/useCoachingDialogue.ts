@@ -181,8 +181,11 @@ export function useCoachingDialogue() {
       }));
 
       try {
+        // When client transcript is available, skip audio upload to avoid
+        // Render timeout (audio upload + Whisper + Gemini > 30s).
+        // Only send audio as fallback when Web Speech API produced no transcript.
         const result = await submitCoachingTurn(state.conversationId, {
-          audio: audioBlob,
+          audio: transcript ? undefined : audioBlob,
           transcript,
           stage: state.currentStage,
           mode: state.stageMode || undefined,
