@@ -61,13 +61,15 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 flex justify-around items-center h-[72px] pb-2 z-[100]"
+      className="fixed bottom-0 left-0 right-0 flex justify-around items-center z-[100]"
       style={{
         background: 'rgba(10, 14, 26, 0.85)',
         backdropFilter: 'blur(30px)',
         WebkitBackdropFilter: 'blur(30px)',
         borderTop: '1px solid rgba(0,212,255,0.15)',
         boxShadow: '0 -5px 30px rgba(0,212,255,0.08)',
+        paddingBottom: 'env(safe-area-inset-bottom, 8px)',
+        paddingTop: '8px',
       }}
     >
       {navItems.map((item) => {

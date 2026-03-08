@@ -31,7 +31,7 @@ export default function Header() {
   }, [refreshProfile]);
 
   return (
-    <header className="flex justify-between items-center px-5 py-3 flex-shrink-0">
+    <header className="flex justify-between items-center px-5 py-3 flex-shrink-0" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
       <div className="flex items-center gap-3">
         <h1
           className="text-xl font-black tracking-[6px] text-neon-cyan"

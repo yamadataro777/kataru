@@ -33,7 +33,7 @@ export default function AnalyticsPage() {
 
   return (
     <AuthGuard>
-      <div className="flex flex-col min-h-dvh">
+      <div className="flex flex-col h-dvh overflow-hidden">
         <Header />
 
         <div className="flex-1 px-5 pb-20 overflow-y-auto" style={{ overscrollBehaviorY: 'contain' }}>
