@@ -68,6 +68,13 @@ export async function deleteSession(id: string): Promise<void> {
   await request(`/api/sessions/${id}`, { method: 'DELETE' });
 }
 
+export async function updateSession(id: string, updates: { user_conclusion?: string | null }): Promise<Session> {
+  return request<Session>(`/api/sessions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
 export async function uploadAudio(sessionId: string, audioBlob: Blob): Promise<Session> {
   const ext = audioBlob.type.includes('mp4') ? 'mp4' : audioBlob.type.includes('wav') ? 'wav' : 'webm';
   const formData = new FormData();

@@ -98,6 +98,29 @@ router.delete('/:id', requireAuth, async (req: Request<{ id: string }>, res: Res
   }
 });
 
+// PATCH /:id - Update session (user_conclusion etc.)
+router.patch('/:id', requireAuth, async (req: Request<{ id: string }>, res: Response) => {
+  try {
+    const { userId } = req as unknown as AuthenticatedRequest;
+    const session = await getSession(req.params.id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    if (session.user_id && session.user_id !== userId) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    const { user_conclusion } = req.body;
+    const updated = await updateSession(req.params.id, { user_conclusion });
+    res.json(updated);
+  } catch (error) {
+    console.error('Error updating session:', error);
+    res.status(500).json({ error: 'Failed to update session' });
+  }
+});
+
 // POST /:id/audio - Upload audio file
 router.post('/:id/audio', requireAuth, upload.single('audio'), async (req: Request<{ id: string }>, res: Response) => {
   try {

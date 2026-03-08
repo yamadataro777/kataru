@@ -909,4 +909,35 @@ iOSアプリとして配布する場合、Apple規約によりアプリ内デジ
 - **削除**: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_LITE`, `STRIPE_PRICE_STANDARD`, `STRIPE_WEBHOOK_SECRET`
 - **追加**: `REVENUECAT_WEBHOOK_AUTH_TOKEN` (backend), `NEXT_PUBLIC_REVENUECAT_IOS_KEY` (frontend)
 
-*このドキュメントは2026年3月5日時点の開発状況を記録したものです。*
+---
+
+## P0: Vessel思想統合 — 「育てる」構造の導入 (2026-03-08)
+
+### 背景
+INTP_Youtube_Videoプロジェクトで定義された「思考整理アプリ Vessel」の設計思想から、Kataruの既存アーキテクチャに適合する要素を統合。ワンショット分析ツールから「思考を育てる」ツールへの転換の第一歩。
+
+### 変更内容
+
+#### 1. 「あなたの結論」フィールド追加
+- **DB**: `sessions`テーブルに`user_conclusion`カラム追加（migration 005）
+- **Backend**: `PATCH /api/sessions/:id`エンドポイント追加（user_conclusion更新用）
+- **Frontend API**: `updateSession()`関数追加
+- **ResultsClient**: レポート末尾に結論入力フィールド（GlassCard lime variant）
+- ユーザーがAIレポートを読んだ後、自分の言葉で「結局どう思う？」を記録できる場所を提供
+
+#### 2. レポートラベルのリフレーミング
+- 「ANALYSIS REPORT」→「AIの見立て」に変更
+- AIの出力を「答え」から「思考の叩き台」に位置づけ転換
+- 機能変更なし、フレーミングのみ
+
+#### 3. 「未回答」バッジ（History画面）
+- 結論未記入のcompletedセッションに「未回答」バッジを表示
+- ユーザーが再訪・結論記入すべきセッションを視覚的に識別可能に
+
+### 設計判断
+- Vesselの「プロセス」ではなく「原理」を取り込む方針
+- AIレポートの質は維持しつつ、ラベルとレイアウトで「叩き台」化
+- 結論記入は強制しない（存在するだけで意味がある設計）
+- サイバーパンクHUD美学は変更なし
+
+*このドキュメントは2026年3月8日時点の開発状況を記録したものです。*

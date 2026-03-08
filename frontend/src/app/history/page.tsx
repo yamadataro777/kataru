@@ -83,26 +83,40 @@ export default function HistoryPage() {
                   <h3 className="text-sm font-bold tracking-wide text-hud-white">
                     {session.report?.title || 'Untitled Session'}
                   </h3>
-                  <span
-                    className="text-[9px] px-2 py-1 rounded tracking-[1px] flex-shrink-0 ml-2"
-                    style={{
-                      border: `1px solid ${
-                        session.status === 'completed'
-                          ? 'rgba(168,255,0,0.3)'
-                          : session.status === 'error'
-                          ? 'rgba(255,59,122,0.3)'
-                          : 'rgba(0,212,255,0.3)'
-                      }`,
-                      color:
-                        session.status === 'completed'
-                          ? 'var(--neon-lime)'
-                          : session.status === 'error'
-                          ? 'var(--neon-magenta)'
-                          : 'var(--neon-cyan)',
-                    }}
-                  >
-                    {session.status.toUpperCase()}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                    {session.status === 'completed' && !session.user_conclusion && (
+                      <span
+                        className="text-[8px] px-1.5 py-0.5 rounded tracking-[1px]"
+                        style={{
+                          border: '1px solid rgba(255,59,122,0.25)',
+                          color: 'var(--neon-magenta)',
+                          opacity: 0.7,
+                        }}
+                      >
+                        未回答
+                      </span>
+                    )}
+                    <span
+                      className="text-[9px] px-2 py-1 rounded tracking-[1px]"
+                      style={{
+                        border: `1px solid ${
+                          session.status === 'completed'
+                            ? 'rgba(168,255,0,0.3)'
+                            : session.status === 'error'
+                            ? 'rgba(255,59,122,0.3)'
+                            : 'rgba(0,212,255,0.3)'
+                        }`,
+                        color:
+                          session.status === 'completed'
+                            ? 'var(--neon-lime)'
+                            : session.status === 'error'
+                            ? 'var(--neon-magenta)'
+                            : 'var(--neon-cyan)',
+                      }}
+                    >
+                      {session.status.toUpperCase()}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex gap-4 text-[10px] text-hud-white-dim tracking-[1px]">
                   <span>

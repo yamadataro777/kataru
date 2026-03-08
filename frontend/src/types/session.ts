@@ -9,6 +9,7 @@ export interface Session {
   report: Report | null;
   status: 'recording' | 'uploading' | 'transcribing' | 'generating' | 'completed' | 'error';
   error_message: string | null;
+  user_conclusion: string | null;
 }
 
 export interface Report {

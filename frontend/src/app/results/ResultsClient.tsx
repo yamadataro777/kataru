@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getSession } from '@/lib/api';
+import { getSession, updateSession } from '@/lib/api';
 import { Session } from '@/types/session';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSessionPhase, shouldShowFeedbackAfterResults } from '@/lib/session-tracker';
@@ -21,11 +21,20 @@ export default function ResultsClient() {
   const { profile } = useAuth();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [conclusion, setConclusion] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const plan = profile?.plan || 'free';
   const freeSessionsUsed = profile?.free_sessions_used || 0;
   const phase = getSessionPhase(freeSessionsUsed > 0 ? freeSessionsUsed - 1 : 0);
   const showFeedback = shouldShowFeedbackAfterResults(plan, freeSessionsUsed);
+
+  const conclusionRef = useRef(conclusion);
+  conclusionRef.current = conclusion;
+
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   useEffect(() => {
     const id = searchParams.get('id');
@@ -35,10 +44,28 @@ export default function ResultsClient() {
     }
 
     getSession(id)
-      .then(setSession)
+      .then((s) => {
+        setSession(s);
+        setConclusion(s.user_conclusion || '');
+      })
       .catch(() => setSession(null))
       .finally(() => setLoading(false));
   }, [searchParams]);
+
+  const handleSaveConclusion = async () => {
+    const s = sessionRef.current;
+    if (!s) return;
+    setSaving(true);
+    try {
+      await updateSession(s.id, { user_conclusion: conclusionRef.current || null });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error('Failed to save conclusion:', e);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -83,7 +110,7 @@ export default function ResultsClient() {
         >
           <span>&larr;</span> BACK
         </button>
-        <span className="label">ANALYSIS REPORT</span>
+        <span className="label">AIの見立て</span>
         <h1
           className="text-xl font-bold tracking-[2px] mt-2 text-hud-white"
           style={{ animation: 'glitch-in 0.4s ease forwards' }}
@@ -238,6 +265,45 @@ export default function ResultsClient() {
             </div>
           </GlassCard>
         )}
+
+        {/* Your Conclusion */}
+        <GlassCard className="p-4" variant="lime">
+          <span
+            className="text-[9px] tracking-[3px] font-bold block mb-3"
+            style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
+          >
+            あなたの結論
+          </span>
+          <textarea
+            value={conclusion}
+            onChange={(e) => {
+              setConclusion(e.target.value);
+              setSaved(false);
+            }}
+            placeholder="結局、自分はどう思う？"
+            rows={4}
+            className="w-full bg-transparent text-sm leading-7 text-hud-white tracking-wide resize-none outline-none placeholder:text-hud-white-dim placeholder:opacity-40"
+            style={{
+              border: 'none',
+              borderBottom: '1px solid rgba(168,255,0,0.15)',
+              paddingBottom: '8px',
+            }}
+          />
+          <div className="flex justify-end mt-3">
+            <button
+              onClick={handleSaveConclusion}
+              disabled={saving || saved}
+              className="text-[9px] tracking-[2px] font-bold px-4 py-2 rounded cursor-pointer transition-all disabled:opacity-50"
+              style={{
+                color: saved ? 'var(--neon-lime)' : 'var(--hud-white)',
+                background: saved ? 'rgba(168,255,0,0.12)' : 'rgba(168,255,0,0.06)',
+                border: `1px solid ${saved ? 'rgba(168,255,0,0.4)' : 'rgba(168,255,0,0.2)'}`,
+              }}
+            >
+              {saving ? 'SAVING...' : saved ? 'SAVED' : '保存する'}
+            </button>
+          </div>
+        </GlassCard>
 
         {/* Back button */}
         <div className="mt-4 flex justify-center">
