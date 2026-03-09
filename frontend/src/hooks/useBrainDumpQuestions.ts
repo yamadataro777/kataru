@@ -23,7 +23,11 @@ interface UseBrainDumpQuestionsReturn {
   reset: () => void;
 }
 
-const SPEECH_THRESHOLD = 0.08;
+// Must be higher than silence detector threshold (0.05) to avoid
+// dismissing on ambient noise that already passed silence detection
+const SPEECH_DISMISS_THRESHOLD = 0.15;
+// Grace period after showing question before allowing speech-dismissal
+const MIN_DISPLAY_MS = 2000;
 
 export default function useBrainDumpQuestions({
   silenceTriggered,
@@ -43,47 +47,61 @@ export default function useBrainDumpQuestions({
   const cooldownRef = useRef(false);
   const staticShownRef = useRef<Set<string>>(new Set());
   const staticCountRef = useRef(0);
-  const lastInterimRef = useRef('');
+  const shownAtRef = useRef<number>(0);
+  const interimAtShowRef = useRef('');
 
   // Detect user speaking to dismiss question
   useEffect(() => {
     if (!activeQuestion || !questionVisible) return;
 
-    // Check interim transcript change
-    if (interimTranscript !== lastInterimRef.current && interimTranscript.length > 0) {
+    // Grace period: don't dismiss within MIN_DISPLAY_MS of showing
+    if (Date.now() - shownAtRef.current < MIN_DISPLAY_MS) return;
+
+    // Check interim transcript: only dismiss if NEW text appeared after the question was shown
+    const newInterim = interimTranscript.length > interimAtShowRef.current.length &&
+      interimTranscript !== interimAtShowRef.current;
+    if (newInterim) {
       dismissQuestion();
+      return;
     }
 
-    // Check audio level
+    // Check sustained audio level (average must clearly exceed threshold)
     if (frequencyData.length > 0) {
       const avg = frequencyData.reduce((s, v) => s + v, 0) / frequencyData.length;
-      if (avg > SPEECH_THRESHOLD) {
+      if (avg > SPEECH_DISMISS_THRESHOLD) {
         dismissQuestion();
       }
     }
-
-    lastInterimRef.current = interimTranscript;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interimTranscript, frequencyData, activeQuestion, questionVisible]);
 
   const dismissQuestion = useCallback(() => {
     setQuestionVisible(false);
-    const clearTimer = setTimeout(() => setActiveQuestion(null), 400);
+    setTimeout(() => setActiveQuestion(null), 400);
     cooldownRef.current = true;
-    const cooldownTimer = setTimeout(() => {
+    setTimeout(() => {
       cooldownRef.current = false;
     }, 3000);
-    return () => {
-      clearTimeout(clearTimer);
-      clearTimeout(cooldownTimer);
-    };
+  }, []);
+
+  const showQuestion = useCallback((text: string) => {
+    setActiveQuestion(text);
+    setQuestionVisible(true);
+    shownAtRef.current = Date.now();
+    interimAtShowRef.current = interimTranscript;
+    cooldownRef.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Silence triggered → fetch AI question
+  // IMPORTANT: always resetTrigger() so the silence detector can re-fire
   useEffect(() => {
-    if (!silenceTriggered || phase !== 'stimulation' || cooldownRef.current || activeQuestion !== null) return;
+    if (!silenceTriggered) return;
 
+    // Always reset the trigger so it can fire again later
     resetTrigger();
+
+    if (phase !== 'stimulation' || cooldownRef.current || activeQuestion !== null || isLoadingQuestion) return;
 
     // Not enough transcript for AI — use static fallback
     if (transcript.length < 20) {
@@ -91,9 +109,7 @@ export default function useBrainDumpQuestions({
       if (q) {
         staticShownRef.current.add(q.id);
         staticCountRef.current += 1;
-        setActiveQuestion(q.text);
-        setQuestionVisible(true);
-        cooldownRef.current = true;
+        showQuestion(q.text);
       }
       return;
     }
@@ -108,18 +124,14 @@ export default function useBrainDumpQuestions({
 
         if (question) {
           previousQuestionsRef.current.push(question);
-          setActiveQuestion(question);
-          setQuestionVisible(true);
-          cooldownRef.current = true;
+          showQuestion(question);
         } else {
           // Fallback to static
           const q = selectNextQuestion(staticShownRef.current, staticCountRef.current);
           if (q) {
             staticShownRef.current.add(q.id);
             staticCountRef.current += 1;
-            setActiveQuestion(q.text);
-            setQuestionVisible(true);
-            cooldownRef.current = true;
+            showQuestion(q.text);
           }
         }
       })
@@ -130,9 +142,7 @@ export default function useBrainDumpQuestions({
         if (q) {
           staticShownRef.current.add(q.id);
           staticCountRef.current += 1;
-          setActiveQuestion(q.text);
-          setQuestionVisible(true);
-          cooldownRef.current = true;
+          showQuestion(q.text);
         }
       });
 
@@ -159,7 +169,8 @@ export default function useBrainDumpQuestions({
     cooldownRef.current = false;
     staticShownRef.current = new Set();
     staticCountRef.current = 0;
-    lastInterimRef.current = '';
+    shownAtRef.current = 0;
+    interimAtShowRef.current = '';
   }, []);
 
   // Reset when recording starts
