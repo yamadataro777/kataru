@@ -10,7 +10,8 @@ import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
 import useTranscription from '@/hooks/useTranscription';
 import useSilenceDetector from '@/hooks/useSilenceDetector';
-import { selectNextQuestion, integrationPrompt } from '@/data/stimulusQuestions';
+import useBrainDumpQuestions from '@/hooks/useBrainDumpQuestions';
+import { integrationPrompt } from '@/data/stimulusQuestions';
 import AuthGuard from '@/components/auth/AuthGuard';
 import NeonButton from '@/components/ui/NeonButton';
 
@@ -18,7 +19,7 @@ type InputMode = 'voice' | 'text';
 type RecordingPhase = 'free' | 'stimulation' | 'integration';
 
 const MIN_RECORDING_SECONDS = 30;
-const STIMULATION_START_SECONDS = 60;
+const STIMULATION_START_SECONDS = 45;
 
 export default function RecordPage() {
   const router = useRouter();
@@ -31,18 +32,31 @@ export default function RecordPage() {
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // Stimulus question state
+  // Phase state
   const [currentPhase, setCurrentPhase] = useState<RecordingPhase>('free');
-  const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
-  const [questionVisible, setQuestionVisible] = useState(false);
   const [showIntegrationOverlay, setShowIntegrationOverlay] = useState(false);
-  const shownQuestionsRef = useRef<Set<string>>(new Set());
-  const questionCooldownRef = useRef(false);
-  const questionsShownCountRef = useRef(0);
+  const [integrationQuestion, setIntegrationQuestion] = useState<string | null>(null);
 
   // Silence detection — only active during stimulation phase
   const { silenceTriggered, resetTrigger } = useSilenceDetector(frequencyData, {
-    enabled: inputMode === 'voice' && isRecording && currentPhase === 'stimulation' && !questionCooldownRef.current && activeQuestion === null,
+    enabled: inputMode === 'voice' && isRecording && currentPhase === 'stimulation',
+  });
+
+  // AI-powered brain dump questions
+  const {
+    activeQuestion,
+    questionVisible,
+    isLoadingQuestion,
+    fetchIntegration,
+  } = useBrainDumpQuestions({
+    silenceTriggered,
+    resetTrigger,
+    transcript,
+    interimTranscript,
+    frequencyData,
+    elapsedSeconds: duration,
+    phase: currentPhase,
+    isRecording,
   });
 
   // Phase transition: free → stimulation based on duration
@@ -51,42 +65,6 @@ export default function RecordPage() {
       setCurrentPhase('stimulation');
     }
   }, [duration, currentPhase]);
-
-  // Silence triggered → show question
-  useEffect(() => {
-    if (!silenceTriggered || currentPhase !== 'stimulation' || questionCooldownRef.current || activeQuestion !== null) return;
-
-    const question = selectNextQuestion(shownQuestionsRef.current, questionsShownCountRef.current);
-    if (!question) return;
-
-    shownQuestionsRef.current.add(question.id);
-    questionsShownCountRef.current += 1;
-    setActiveQuestion(question.text);
-    setQuestionVisible(true);
-    questionCooldownRef.current = true;
-    resetTrigger();
-
-    // Fade out after 5.5s
-    const fadeTimer = setTimeout(() => {
-      setQuestionVisible(false);
-    }, 5500);
-
-    // Clear question after fade-out animation (0.4s)
-    const clearTimer = setTimeout(() => {
-      setActiveQuestion(null);
-    }, 5900);
-
-    // Cooldown ends 4s after question is cleared
-    const cooldownTimer = setTimeout(() => {
-      questionCooldownRef.current = false;
-    }, 9900);
-
-    return () => {
-      clearTimeout(fadeTimer);
-      clearTimeout(clearTimer);
-      clearTimeout(cooldownTimer);
-    };
-  }, [silenceTriggered, currentPhase, activeQuestion, resetTrigger]);
 
   // Auto-scroll transcript to latest text
   useEffect(() => {
@@ -117,18 +95,18 @@ export default function RecordPage() {
   const handleStop = useCallback(() => {
     // If recording is long enough, show integration overlay
     if (duration >= STIMULATION_START_SECONDS) {
-      // Dismiss any active stimulus question
-      setActiveQuestion(null);
-      setQuestionVisible(false);
       setCurrentPhase('integration');
       setShowIntegrationOverlay(true);
-      // Recording + transcription continue
+      // Fetch AI integration question
+      fetchIntegration().then((q) => {
+        if (q) setIntegrationQuestion(q);
+      });
       return;
     }
     // Short recording — stop immediately
     stopRecording();
     stopListening();
-  }, [duration, stopRecording, stopListening]);
+  }, [duration, stopRecording, stopListening, fetchIntegration]);
 
   const handleIntegrationComplete = useCallback(() => {
     setShowIntegrationOverlay(false);
@@ -152,16 +130,12 @@ export default function RecordPage() {
     }
   }, [audioBlob, isRecording, duration, transcript, router]);
 
-  // Reset stimulus state when re-recording
+  // Reset state when re-recording
   useEffect(() => {
     if (isRecording) {
       setCurrentPhase('free');
-      setActiveQuestion(null);
-      setQuestionVisible(false);
       setShowIntegrationOverlay(false);
-      shownQuestionsRef.current = new Set();
-      questionCooldownRef.current = false;
-      questionsShownCountRef.current = 0;
+      setIntegrationQuestion(null);
     }
   }, [isRecording]);
 
@@ -266,7 +240,7 @@ export default function RecordPage() {
             </div>
 
             {/* Stimulus Question */}
-            <StimulusPrompt question={activeQuestion} visible={questionVisible} />
+            <StimulusPrompt question={activeQuestion} visible={questionVisible} loading={isLoadingQuestion} />
 
             {/* Too short warning */}
             {tooShortWarning && (
@@ -320,7 +294,7 @@ export default function RecordPage() {
                       textShadow: '0 0 12px rgba(168,255,0,0.3)',
                     }}
                   >
-                    {integrationPrompt}
+                    {integrationQuestion || integrationPrompt}
                   </p>
                   <p
                     className="text-[9px] tracking-[1px] mb-6"

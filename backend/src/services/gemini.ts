@@ -16,6 +16,14 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey || '');
 const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
+const fastModel = genAI.getGenerativeModel({
+  model: 'gemini-2.5-flash',
+  generationConfig: {
+    maxOutputTokens: 100,
+    temperature: 0.9,
+  },
+});
+
 export type PlanType = 'free' | 'paid';
 
 export interface Report {
@@ -102,4 +110,9 @@ export async function generateOnboardingReport(transcript: string, type: Onboard
 export async function generateContent(prompt: string): Promise<string> {
   const result = await model.generateContent(prompt);
   return result.response.text();
+}
+
+export async function generateBrainDumpQuestion(prompt: string): Promise<string> {
+  const result = await fastModel.generateContent(prompt);
+  return result.response.text().trim();
 }

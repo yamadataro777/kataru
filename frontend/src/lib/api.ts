@@ -352,6 +352,56 @@ export async function endCoachingSession(id: string) {
   return request(`/api/coaching/${id}/end`, { method: 'POST' });
 }
 
+// === Brain Dump API ===
+
+export async function fetchBrainDumpQuestion(
+  transcript: string,
+  previousQuestions: string[],
+  elapsedSeconds: number,
+): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const authHeaders = await getAuthHeaders();
+    const res = await fetch(`${BASE_URL}/api/brain-dump/question`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({
+        transcript,
+        previous_questions: previousQuestions,
+        elapsed_seconds: elapsedSeconds,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.question ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchIntegrationQuestion(transcript: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const authHeaders = await getAuthHeaders();
+    const res = await fetch(`${BASE_URL}/api/brain-dump/integration`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({ transcript }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.question ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function submitCoachingFeedback(data: {
   score: number;
   comment?: string;
