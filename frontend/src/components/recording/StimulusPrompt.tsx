@@ -4,7 +4,7 @@ import { useRef, useEffect, useState } from 'react';
 
 interface StimulusPromptProps {
   question: string | null;
-  phase: 'typing' | 'hold' | 'dissolve' | null;
+  phase: 'typing' | 'hold' | null;
   isIntegration?: boolean;
 }
 
@@ -54,8 +54,6 @@ export default function StimulusPrompt({ question, phase, isIntegration = false 
           color,
           textShadow: `0 0 12px ${glowColor}`,
           clipPath: phase === 'typing' ? `inset(0 ${100 - revealPercent}% 0 0)` : undefined,
-          opacity: phase === 'dissolve' ? 0 : 1,
-          transition: phase === 'dissolve' ? 'opacity 0.5s ease-out' : undefined,
         }}
       >
         {question}
