@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { deleteAccount } from '@/lib/api';
@@ -8,14 +8,31 @@ import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
 
 const APP_VERSION = '0.1.0';
+const DEV_TAP_COUNT = 5;
+const DEV_TAP_WINDOW_MS = 3000;
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, overridePlan } = useAuth();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [devUnlocked, setDevUnlocked] = useState(false);
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const handleVersionTap = () => {
+    if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    if (tapCountRef.current >= DEV_TAP_COUNT) {
+      tapCountRef.current = 0;
+      setDevUnlocked(prev => !prev);
+      return;
+    }
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, DEV_TAP_WINDOW_MS);
+  };
 
   if (!user) {
     router.push('/login');
@@ -165,11 +182,38 @@ export default function SettingsPage() {
         )}
       </GlassCard>
 
+      {/* DEV MODE */}
+      {devUnlocked && process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true' && (
+        <GlassCard className="p-5 mb-4 border-[rgba(168,255,0,0.3)]" variant="cyan">
+          <h2 className="text-[10px] tracking-[2px] text-neon-lime mb-3">DEV MODE ON</h2>
+          <div className="space-y-2">
+            {(['free', 'lite', 'standard'] as const).map((plan) => (
+              <button
+                key={plan}
+                onClick={() => overridePlan(plan)}
+                className="w-full text-xs tracking-[1px] text-neon-lime bg-transparent border border-[rgba(168,255,0,0.3)] rounded-lg py-2 cursor-pointer hover:bg-[rgba(168,255,0,0.1)] transition-colors"
+              >
+                Switch to {plan.toUpperCase()}
+              </button>
+            ))}
+            <button
+              onClick={handleReplayOnboarding}
+              className="w-full text-xs tracking-[1px] text-neon-lime bg-transparent border border-[rgba(168,255,0,0.3)] rounded-lg py-2 cursor-pointer hover:bg-[rgba(168,255,0,0.1)] transition-colors"
+            >
+              Replay Onboarding
+            </button>
+          </div>
+        </GlassCard>
+      )}
+
       {/* Version */}
       <div className="mt-6 flex flex-col items-center gap-1">
-        <span className="text-[9px] tracking-[2px] text-hud-white-dim select-none">
+        <button
+          onClick={handleVersionTap}
+          className="text-[9px] tracking-[2px] text-hud-white-dim select-none bg-transparent border-none cursor-default"
+        >
           Kataru v{APP_VERSION}
-        </span>
+        </button>
       </div>
 
       {/* Back */}

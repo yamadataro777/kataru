@@ -33,6 +33,8 @@ interface AuthContextType extends AuthState {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
+  devBypass: () => void;
+  overridePlan: (plan: UserPlan) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -219,6 +221,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return session?.access_token ?? null;
   };
 
+  const devBypass = () => {
+    if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
+    setState({
+      user: { id: 'dev-user', email: 'dev@kataru.local' } as User,
+      session: null,
+      profile: {
+        id: 'dev-user',
+        plan: 'standard',
+        session_count: 0,
+        free_sessions_used: 0,
+        created_at: new Date().toISOString(),
+      },
+      loading: false,
+    });
+  };
+
+  const overridePlan = (plan: UserPlan) => {
+    if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
+    setState(prev => ({
+      ...prev,
+      profile: prev.profile
+        ? { ...prev.profile, plan }
+        : { id: 'dev-user', plan, session_count: 0, free_sessions_used: 0, created_at: new Date().toISOString() },
+    }));
+  };
+
   // Keep Render backend warm by pinging every 14 minutes
   const keepAliveRef = useRef<ReturnType<typeof setInterval>>(undefined);
   useEffect(() => {
@@ -238,6 +266,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshProfile,
       getAccessToken,
+      devBypass,
+      overridePlan,
     }}>
       {children}
     </AuthContext.Provider>

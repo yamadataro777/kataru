@@ -7,6 +7,14 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  // Dev bypass: skip auth in non-production
+  if (process.env.NODE_ENV !== 'production' && req.headers['x-dev-bypass'] === 'true') {
+    (req as AuthenticatedRequest).userId = 'dev-user';
+    (req as AuthenticatedRequest).userPlan = 'standard';
+    next();
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Missing authorization token' });
@@ -38,6 +46,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+  // Dev bypass: skip auth in non-production
+  if (process.env.NODE_ENV !== 'production' && req.headers['x-dev-bypass'] === 'true') {
+    (req as AuthenticatedRequest).userId = 'dev-user';
+    (req as AuthenticatedRequest).userPlan = 'standard';
+    next();
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     next();

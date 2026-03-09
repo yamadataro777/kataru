@@ -1,5 +1,17 @@
 # Git Worktree Log
 
+## 2026-03-09
+- **Branch**: kaizen-hypothesis
+- **Action**: commit + push
+- **Commit**: 7b6c54a — Remove all dev bypass and DEV MODE features for App Store submission
+- **Changes**: 7ファイルから111行削除。DEV MODE 5タップ、overridePlan、devBypass、X-Dev-Bypassヘッダー、dev-userフェイクプロファイルを全削除
+
+## 2026-03-09
+- **Branch**: main
+- **Action**: merge (fast-forward) + push
+- **Commit**: 7b6c54a — kaizen-hypothesis → main マージ
+- **Changes**: App Store提出用のdev bypass全削除をmainに統合
+
 ## 2026-03-08
 - **Branch**: kaizen-hypothesis
 - **Action**: commit + push

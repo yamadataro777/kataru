@@ -10,7 +10,7 @@ type Mode = 'login' | 'signup';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signIn, signUp, signInWithGoogle, signInWithApple, user, loading } = useAuth();
+  const { signIn, signUp, signInWithGoogle, signInWithApple, devBypass, user, loading } = useAuth();
   const [mode, setMode] = useState<Mode>('signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -213,6 +213,16 @@ export default function LoginPage() {
             <span className="text-xs tracking-[1px] text-hud-white">{mode === 'signup' ? 'Sign up' : 'Sign in'} with Google</span>
           </button>
         </div>
+
+        {/* DEV: Skip Auth */}
+        {process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true' && (
+          <button
+            onClick={() => { devBypass(); router.push('/'); }}
+            className="mt-4 w-full py-2.5 rounded-lg border border-[rgba(168,255,0,0.3)] bg-[rgba(168,255,0,0.05)] cursor-pointer transition-all hover:bg-[rgba(168,255,0,0.15)]"
+          >
+            <span className="text-xs tracking-[2px] text-neon-lime">DEV: SKIP AUTH</span>
+          </button>
+        )}
 
       </div>
     </div>
