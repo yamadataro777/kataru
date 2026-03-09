@@ -10,7 +10,7 @@ type Mode = 'login' | 'signup';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signIn, signUp, signInWithGoogle, signInWithApple, user, loading, devBypass } = useAuth();
+  const { signIn, signUp, signInWithGoogle, signInWithApple, user, loading } = useAuth();
   const [mode, setMode] = useState<Mode>('signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -214,14 +214,6 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true' && (
-          <button
-            onClick={() => { devBypass(); router.push('/'); }}
-            className="mt-4 w-full text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(255,59,122,0.3)] rounded py-2 cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
-          >
-            DEV: SKIP AUTH
-          </button>
-        )}
       </div>
     </div>
   );

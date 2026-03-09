@@ -33,8 +33,6 @@ interface AuthContextType extends AuthState {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
-  devBypass: () => void;
-  overridePlan: (plan: UserPlan) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -230,25 +228,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(keepAliveRef.current);
   }, []);
 
-  const overridePlan = (plan: UserPlan) => {
-    setState(prev => ({
-      ...prev,
-      profile: prev.profile
-        ? { ...prev.profile, plan }
-        : { id: 'override', plan, session_count: 0, free_sessions_used: 0, created_at: new Date().toISOString() },
-    }));
-  };
-
-  const devBypass = () => {
-    if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
-    setState({
-      user: { id: 'dev-user', email: 'dev@localhost' } as User,
-      session: null,
-      profile: { id: 'dev-user', plan: 'standard', session_count: 0, free_sessions_used: 0, created_at: new Date().toISOString() },
-      loading: false,
-    });
-  };
-
   return (
     <AuthContext.Provider value={{
       ...state,
@@ -259,8 +238,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshProfile,
       getAccessToken,
-      devBypass,
-      overridePlan,
     }}>
       {children}
     </AuthContext.Provider>

@@ -284,8 +284,7 @@ export class CoachingService {
     await updateConversation(conv.id, { running_context: initialRc as unknown as Record<string, unknown> });
 
     // Link user to coaching session via coaching_conversations table
-    // Skip for dev-user (not a valid UUID, would violate FK constraint)
-    if (userId && userId !== 'dev-user') {
+    if (userId) {
       const { supabase } = await import('./supabase');
       await supabase.from('coaching_conversations').insert({
         id: conv.id,
