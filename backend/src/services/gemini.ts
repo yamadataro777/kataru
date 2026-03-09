@@ -6,6 +6,7 @@ import {
   buildOnboardingGoalPrompt,
   buildOnboardingEmotionPrompt,
 } from '../prompts/onboarding-prompts';
+import { BrainDumpPhase, buildBrainDumpQuestionPrompt, buildIntegrationQuestionPrompt } from '../prompts/brain-dump-prompt';
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -102,4 +103,54 @@ export async function generateOnboardingReport(transcript: string, type: Onboard
 export async function generateContent(prompt: string): Promise<string> {
   const result = await model.generateContent(prompt);
   return result.response.text();
+}
+
+export async function generateBrainDumpQuestion(
+  transcript: string,
+  phase: BrainDumpPhase,
+  questionsShown: string[],
+): Promise<string | null> {
+  try {
+    const prompt = buildBrainDumpQuestionPrompt(transcript, phase, questionsShown);
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000)),
+    ]);
+
+    let text = result.response.text().trim();
+    // Remove quotes if wrapped
+    text = text.replace(/^[「『""]|[」』""]$/g, '');
+
+    // Validation: 5-40 chars, ends with ？
+    if (text.length < 5 || text.length > 40) return null;
+    if (!text.endsWith('？') && !text.endsWith('?')) return null;
+    // Reject AI boilerplate
+    if (/^(はい|もちろん|かしこまりました|承知しました)/.test(text)) return null;
+
+    return text;
+  } catch (err) {
+    console.error('Brain dump question generation failed:', err);
+    return null;
+  }
+}
+
+export async function generateIntegrationQuestion(transcript: string): Promise<string | null> {
+  try {
+    const prompt = buildIntegrationQuestionPrompt(transcript);
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000)),
+    ]);
+
+    let text = result.response.text().trim();
+    text = text.replace(/^[「『""]|[」』""]$/g, '');
+
+    if (text.length < 5 || text.length > 50) return null;
+    if (!text.endsWith('？') && !text.endsWith('?')) return null;
+
+    return text;
+  } catch (err) {
+    console.error('Integration question generation failed:', err);
+    return null;
+  }
 }

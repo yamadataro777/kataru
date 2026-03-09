@@ -9,16 +9,16 @@ import StimulusPrompt from '@/components/recording/StimulusPrompt';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
 import useTranscription from '@/hooks/useTranscription';
-import useSilenceDetector from '@/hooks/useSilenceDetector';
-import { selectNextQuestion, integrationPrompt } from '@/data/stimulusQuestions';
+import useBrainDumpQuestions from '@/hooks/useBrainDumpQuestions';
 import AuthGuard from '@/components/auth/AuthGuard';
 import NeonButton from '@/components/ui/NeonButton';
 
 type InputMode = 'voice' | 'text';
-type RecordingPhase = 'free' | 'stimulation' | 'integration';
 
 const MIN_RECORDING_SECONDS = 30;
-const STIMULATION_START_SECONDS = 60;
+const INTEGRATION_ELIGIBLE_SECONDS = 60;
+const QUESTION_INTERVAL = 30; // seconds between questions
+const PREFETCH_LEAD_TIME = 10; // seconds before display to start API call
 
 export default function RecordPage() {
   const router = useRouter();
@@ -30,112 +30,134 @@ export default function RecordPage() {
   const frequencyData = useAudioVisualizer(analyserNode);
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const { getQuestion, getIntegrationQuestion, reset: resetQuestions } = useBrainDumpQuestions();
 
-  // Stimulus question state
-  const [currentPhase, setCurrentPhase] = useState<RecordingPhase>('free');
+  // Question state
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
-  const [questionVisible, setQuestionVisible] = useState(false);
-  const [showIntegrationOverlay, setShowIntegrationOverlay] = useState(false);
-  const shownQuestionsRef = useRef<Set<string>>(new Set());
-  const questionCooldownRef = useRef(false);
-  const questionsShownCountRef = useRef(0);
+  const [questionPhase, setQuestionPhase] = useState<'typing' | 'hold' | 'dissolve' | null>(null);
+  const prefetchedRef = useRef<string | null>(null);
+  const prefetchingRef = useRef(false);
+  const transcriptRef = useRef(transcript);
 
-  // Silence detection — only active during stimulation phase
-  const { silenceTriggered, resetTrigger } = useSilenceDetector(frequencyData, {
-    enabled: inputMode === 'voice' && isRecording && currentPhase === 'stimulation' && !questionCooldownRef.current && activeQuestion === null,
-  });
+  // Integration state (inline, no overlay)
+  const [isIntegrating, setIsIntegrating] = useState(false);
+  const [integrationQuestion, setIntegrationQuestion] = useState<string | null>(null);
+  const [showIntegrationButtons, setShowIntegrationButtons] = useState(false);
+  const [barHeightMultiplier, setBarHeightMultiplier] = useState(1.0);
 
-  // Phase transition: free → stimulation based on duration
-  useEffect(() => {
-    if (currentPhase === 'free' && duration >= STIMULATION_START_SECONDS) {
-      setCurrentPhase('stimulation');
-    }
-  }, [duration, currentPhase]);
+  // Keep transcript ref in sync
+  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
 
-  // Silence triggered → show question
-  useEffect(() => {
-    if (!silenceTriggered || currentPhase !== 'stimulation' || questionCooldownRef.current || activeQuestion !== null) return;
-
-    const question = selectNextQuestion(shownQuestionsRef.current, questionsShownCountRef.current);
-    if (!question) return;
-
-    shownQuestionsRef.current.add(question.id);
-    questionsShownCountRef.current += 1;
-    setActiveQuestion(question.text);
-    setQuestionVisible(true);
-    questionCooldownRef.current = true;
-    resetTrigger();
-
-    // Fade out after 5.5s
-    const fadeTimer = setTimeout(() => {
-      setQuestionVisible(false);
-    }, 5500);
-
-    // Clear question after fade-out animation (0.4s)
-    const clearTimer = setTimeout(() => {
-      setActiveQuestion(null);
-    }, 5900);
-
-    // Cooldown ends 4s after question is cleared
-    const cooldownTimer = setTimeout(() => {
-      questionCooldownRef.current = false;
-    }, 9900);
-
-    return () => {
-      clearTimeout(fadeTimer);
-      clearTimeout(clearTimer);
-      clearTimeout(cooldownTimer);
-    };
-  }, [silenceTriggered, currentPhase, activeQuestion, resetTrigger]);
-
-  // Auto-scroll transcript to latest text
+  // Auto-scroll transcript
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, interimTranscript]);
 
+  // Start recording on mount
   useEffect(() => {
     if (inputMode === 'voice') {
       setTooShortWarning(false);
       startRecording();
     }
-    return () => {
-      stopRecording();
-    };
+    return () => { stopRecording(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputMode]);
 
+  // Start transcription
   useEffect(() => {
     if (inputMode === 'voice' && isRecording && isSupported) {
       startListening();
     }
-    return () => {
-      stopListening();
-    };
+    return () => { stopListening(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRecording, inputMode]);
 
-  const handleStop = useCallback(() => {
-    // If recording is long enough, show integration overlay
-    if (duration >= STIMULATION_START_SECONDS) {
-      // Dismiss any active stimulus question
+  // === 30-second rhythm: Prefetch question 10s before display ===
+  useEffect(() => {
+    if (!isRecording || isIntegrating) return;
+    if (duration < QUESTION_INTERVAL - PREFETCH_LEAD_TIME) return;
+    if (duration % QUESTION_INTERVAL !== QUESTION_INTERVAL - PREFETCH_LEAD_TIME) return;
+    if (prefetchingRef.current) return;
+
+    prefetchingRef.current = true;
+    getQuestion(transcriptRef.current, duration).then(q => {
+      prefetchedRef.current = q;
+      prefetchingRef.current = false;
+    }).catch(() => {
+      prefetchingRef.current = false;
+    });
+  }, [duration, isRecording, isIntegrating, getQuestion]);
+
+  // === 30-second rhythm: Display question ===
+  useEffect(() => {
+    if (!isRecording || isIntegrating) return;
+    if (duration < QUESTION_INTERVAL || duration % QUESTION_INTERVAL !== 0) return;
+    if (activeQuestion !== null) return;
+
+    const question = prefetchedRef.current;
+    prefetchedRef.current = null;
+    if (!question) return;
+
+    setActiveQuestion(question);
+    setQuestionPhase('typing');
+    triggerHaptic('light');
+
+    const typingMs = question.length * 67;
+    const holdMs = 5000;
+
+    setTimeout(() => setQuestionPhase('hold'), typingMs);
+    setTimeout(() => setQuestionPhase('dissolve'), typingMs + holdMs);
+    setTimeout(() => {
       setActiveQuestion(null);
-      setQuestionVisible(false);
-      setCurrentPhase('integration');
-      setShowIntegrationOverlay(true);
-      // Recording + transcription continue
+      setQuestionPhase(null);
+    }, typingMs + holdMs + 500);
+  }, [duration, isRecording, isIntegrating, activeQuestion]);
+
+  // === Stop → Integration or finish ===
+  const handleStop = useCallback(async () => {
+    if (duration >= INTEGRATION_ELIGIBLE_SECONDS && !isIntegrating) {
+      setActiveQuestion(null);
+      setQuestionPhase(null);
+      setIsIntegrating(true);
+
+      // Reduce bar height over 2s
+      let step = 0;
+      const steps = 20;
+      const interval = setInterval(() => {
+        step++;
+        setBarHeightMultiplier(1.0 - (step / steps) * 0.4);
+        if (step >= steps) clearInterval(interval);
+      }, 100);
+
+      // Fetch integration question
+      const question = await getIntegrationQuestion(transcriptRef.current);
+      setIntegrationQuestion(question);
+      setQuestionPhase('typing');
+
+      const typingMs = question.length * 67;
+      setTimeout(() => {
+        setQuestionPhase('hold');
+        setTimeout(() => setShowIntegrationButtons(true), 2000);
+      }, typingMs);
+
+      triggerHaptic('medium');
       return;
     }
-    // Short recording — stop immediately
+
     stopRecording();
     stopListening();
-  }, [duration, stopRecording, stopListening]);
+  }, [duration, stopRecording, stopListening, getIntegrationQuestion, isIntegrating]);
 
   const handleIntegrationComplete = useCallback(() => {
-    setShowIntegrationOverlay(false);
+    setIsIntegrating(false);
+    setIntegrationQuestion(null);
+    setQuestionPhase(null);
+    setShowIntegrationButtons(false);
     stopRecording();
     stopListening();
   }, [stopRecording, stopListening]);
 
+  // Navigate to processing after recording stops
   useEffect(() => {
     if (audioBlob && !isRecording) {
       if (duration < MIN_RECORDING_SECONDS) {
@@ -152,18 +174,20 @@ export default function RecordPage() {
     }
   }, [audioBlob, isRecording, duration, transcript, router]);
 
-  // Reset stimulus state when re-recording
+  // Reset on re-record
   useEffect(() => {
     if (isRecording) {
-      setCurrentPhase('free');
       setActiveQuestion(null);
-      setQuestionVisible(false);
-      setShowIntegrationOverlay(false);
-      shownQuestionsRef.current = new Set();
-      questionCooldownRef.current = false;
-      questionsShownCountRef.current = 0;
+      setQuestionPhase(null);
+      setIsIntegrating(false);
+      setIntegrationQuestion(null);
+      setShowIntegrationButtons(false);
+      setBarHeightMultiplier(1.0);
+      prefetchedRef.current = null;
+      prefetchingRef.current = false;
+      resetQuestions();
     }
-  }, [isRecording]);
+  }, [isRecording, resetQuestions]);
 
   const handleTextSubmit = async () => {
     if (!textInput.trim()) return;
@@ -174,6 +198,7 @@ export default function RecordPage() {
   };
 
   const charCount = textInput.length;
+  const rotationDeg = duration * 0.5;
 
   return (
     <AuthGuard>
@@ -226,7 +251,7 @@ export default function RecordPage() {
 
         {inputMode === 'voice' ? (
           <>
-            {/* Recording Guidance */}
+            {/* Guidance */}
             <div className="px-5 flex-shrink-0">
               <div className="rounded border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.03)] px-4 py-3">
                 <p className="text-[10px] tracking-[1px] leading-5 text-hud-white opacity-60">
@@ -238,10 +263,29 @@ export default function RecordPage() {
               </div>
             </div>
 
-            {/* Equalizer */}
-            <div className="flex-1 flex flex-col items-center justify-center gap-6">
-              <CircularEqualizer frequencyData={frequencyData} size={240} />
+            {/* Equalizer + Timer + Question */}
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              <CircularEqualizer
+                frequencyData={frequencyData}
+                size={240}
+                rotationDeg={rotationDeg}
+                maxBarHeightMultiplier={barHeightMultiplier}
+              />
+
               <RecordTimer seconds={duration} />
+
+              {isIntegrating ? (
+                <StimulusPrompt
+                  question={integrationQuestion}
+                  phase={questionPhase}
+                  isIntegration
+                />
+              ) : (
+                <StimulusPrompt
+                  question={activeQuestion}
+                  phase={questionPhase}
+                />
+              )}
             </div>
 
             {/* Transcript */}
@@ -260,19 +304,52 @@ export default function RecordPage() {
                 </p>
               ) : (
                 <p className="text-xs text-hud-white-dim tracking-[2px] text-center">
-                  {isSupported ? 'Listening...' : 'Speech recognition not available in this browser'}
+                  {isSupported ? 'Listening...' : '文字起こしは処理ページで行います'}
                 </p>
               )}
             </div>
 
-            {/* Stimulus Question */}
-            <StimulusPrompt question={activeQuestion} visible={questionVisible} />
+            {/* Integration buttons */}
+            {isIntegrating && showIntegrationButtons && (
+              <div className="px-5 mb-4 flex flex-col items-center gap-2">
+                <p
+                  className="text-[9px] tracking-[1px]"
+                  style={{ color: 'var(--hud-white)', opacity: 0.3 }}
+                >
+                  声に出して答えてみてください
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleIntegrationComplete}
+                    className="py-2 px-6 rounded text-[9px] tracking-[2px] cursor-pointer"
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid rgba(232,237,245,0.2)',
+                      color: 'rgba(232,237,245,0.5)',
+                    }}
+                  >
+                    SKIP
+                  </button>
+                  <button
+                    onClick={handleIntegrationComplete}
+                    className="py-2 px-6 rounded text-[9px] tracking-[2px] cursor-pointer"
+                    style={{
+                      background: 'rgba(0,212,255,0.1)',
+                      border: '1px solid rgba(0,212,255,0.4)',
+                      color: 'var(--neon-cyan)',
+                    }}
+                  >
+                    DONE
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Too short warning */}
             {tooShortWarning && (
               <div className="px-5 mb-4 flex flex-col items-center gap-3">
                 <p className="text-xs text-neon-magenta tracking-[1px] text-center">
-                  30秒以上録音してください
+                  もう少し話してみませんか？
                 </p>
                 <NeonButton
                   onClick={() => {
@@ -289,72 +366,10 @@ export default function RecordPage() {
 
             {/* Controls */}
             <div className="pb-8 px-5">
-              {!tooShortWarning && (
+              {!tooShortWarning && !isIntegrating && (
                 <RecordControls onStop={handleStop} isRecording={isRecording} />
               )}
             </div>
-
-            {/* Integration Overlay */}
-            {showIntegrationOverlay && (
-              <div
-                className="fixed inset-0 z-50 flex flex-col items-center justify-center px-8"
-                style={{ background: 'rgba(10,14,26,0.85)' }}
-              >
-                <div
-                  className="rounded-lg px-6 py-8 w-full max-w-sm text-center"
-                  style={{
-                    background: 'rgba(16,22,42,0.9)',
-                    border: '1px solid var(--glass-border)',
-                  }}
-                >
-                  <p
-                    className="text-[10px] tracking-[2px] mb-6"
-                    style={{ color: 'var(--neon-cyan)', opacity: 0.6 }}
-                  >
-                    INTEGRATION
-                  </p>
-                  <p
-                    className="text-sm tracking-[1px] leading-7 mb-8"
-                    style={{
-                      color: 'var(--neon-lime)',
-                      textShadow: '0 0 12px rgba(168,255,0,0.3)',
-                    }}
-                  >
-                    {integrationPrompt}
-                  </p>
-                  <p
-                    className="text-[9px] tracking-[1px] mb-6"
-                    style={{ color: 'var(--hud-white)', opacity: 0.4 }}
-                  >
-                    録音は続いています。声に出して答えてみてください。
-                  </p>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleIntegrationComplete}
-                      className="flex-1 py-3 rounded text-[10px] tracking-[2px] cursor-pointer"
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid rgba(232,237,245,0.2)',
-                        color: 'rgba(232,237,245,0.5)',
-                      }}
-                    >
-                      SKIP
-                    </button>
-                    <button
-                      onClick={handleIntegrationComplete}
-                      className="flex-1 py-3 rounded text-[10px] tracking-[2px] cursor-pointer"
-                      style={{
-                        background: 'rgba(0,212,255,0.1)',
-                        border: '1px solid rgba(0,212,255,0.4)',
-                        color: 'var(--neon-cyan)',
-                      }}
-                    >
-                      DONE
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </>
         ) : (
           <>
@@ -404,4 +419,17 @@ export default function RecordPage() {
       </div>
     </AuthGuard>
   );
+}
+
+// Haptic feedback (iOS only)
+async function triggerHaptic(style: 'light' | 'medium' | 'heavy') {
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (!Capacitor.isNativePlatform()) return;
+    const { Haptics, ImpactStyle } = await import('@capacitor/haptics');
+    const impactMap = { light: ImpactStyle.Light, medium: ImpactStyle.Medium, heavy: ImpactStyle.Heavy };
+    await Haptics.impact({ style: impactMap[style] });
+  } catch {
+    // Haptics not available
+  }
 }

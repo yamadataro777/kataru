@@ -357,4 +357,27 @@ export async function submitCoachingFeedback(data: {
   return submitFeedback(data);
 }
 
+// === Brain Dump API ===
+
+export async function fetchBrainDumpQuestion(
+  transcript: string,
+  duration: number,
+  questionsShown: string[],
+  phase: 'expansion' | 'connection' | 'confrontation',
+): Promise<{ question: string | null }> {
+  return request('/api/brain-dump/question', {
+    method: 'POST',
+    body: JSON.stringify({ transcript, duration, questionsShown, phase }),
+  });
+}
+
+export async function fetchIntegrationQuestion(
+  transcript: string,
+): Promise<{ question: string }> {
+  return request('/api/brain-dump/integration', {
+    method: 'POST',
+    body: JSON.stringify({ transcript }),
+  });
+}
+
 

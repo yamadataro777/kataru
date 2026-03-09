@@ -10,6 +10,7 @@ import feedbackRouter from './routes/feedback';
 import coachingRouter from './routes/coaching';
 import authRouter from './routes/auth';
 import revenuecatRouter from './routes/revenuecat';
+import brainDumpRouter from './routes/brain-dump';
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/conversations', conversationsRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/coaching', coachingRouter);
+app.use('/api/brain-dump', brainDumpRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

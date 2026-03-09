@@ -10,8 +10,8 @@ export default function RecordTimer({ seconds }: RecordTimerProps) {
 
   return (
     <div
-      className="text-[28px] font-bold tracking-[4px] text-neon-cyan font-mono"
-      style={{ textShadow: '0 0 20px rgba(0, 212, 255, 0.5)' }}
+      className="text-[20px] font-bold tracking-[4px] text-neon-cyan font-mono opacity-60"
+      style={{ textShadow: '0 0 10px rgba(0, 212, 255, 0.3)' }}
     >
       {mins}:{secs}
     </div>

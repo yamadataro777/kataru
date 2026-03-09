@@ -5,9 +5,16 @@ import { useRef, useEffect } from 'react';
 interface CircularEqualizerProps {
   frequencyData: number[];
   size?: number;
+  rotationDeg?: number;
+  maxBarHeightMultiplier?: number;
 }
 
-export default function CircularEqualizer({ frequencyData, size = 240 }: CircularEqualizerProps) {
+export default function CircularEqualizer({
+  frequencyData,
+  size = 240,
+  rotationDeg = 0,
+  maxBarHeightMultiplier = 1.0,
+}: CircularEqualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -25,7 +32,7 @@ export default function CircularEqualizer({ frequencyData, size = 240 }: Circula
     const centerX = size / 2;
     const centerY = size / 2;
     const innerRadius = 35;
-    const maxBarHeight = size / 2 - innerRadius - 10;
+    const maxBarHeight = (size / 2 - innerRadius - 10) * maxBarHeightMultiplier;
     const barCount = 64;
 
     ctx.clearRect(0, 0, size, size);
@@ -43,7 +50,7 @@ export default function CircularEqualizer({ frequencyData, size = 240 }: Circula
 
       // Color gradient from cyan to magenta
       const t = i / barCount;
-      const r = Math.round(0 + t * 255);
+      const r = Math.round(t * 255);
       const g = Math.round(212 - t * 153);
       const b = Math.round(255 - t * 133);
 
@@ -79,13 +86,15 @@ export default function CircularEqualizer({ frequencyData, size = 240 }: Circula
     gradient.addColorStop(1, 'rgba(0, 212, 255, 0)');
     ctx.fillStyle = gradient;
     ctx.fill();
-  }, [frequencyData, size]);
+  }, [frequencyData, size, maxBarHeightMultiplier]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: size, height: size }}
-      className="block"
-    />
+    <div style={{ transform: `rotate(${rotationDeg}deg)`, width: size, height: size }}>
+      <canvas
+        ref={canvasRef}
+        style={{ width: size, height: size }}
+        className="block"
+      />
+    </div>
   );
 }

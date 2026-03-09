@@ -11,6 +11,7 @@ interface UseSilenceDetectorOptions {
 interface UseSilenceDetectorReturn {
   isSilent: boolean;
   silenceTriggered: boolean;
+  speechDetected: boolean;
   resetTrigger: () => void;
 }
 
@@ -26,10 +27,12 @@ export default function useSilenceDetector(
 
   const [isSilent, setIsSilent] = useState(false);
   const [silenceTriggered, setSilenceTriggered] = useState(false);
+  const [speechDetected, setSpeechDetected] = useState(false);
 
   const silenceStartRef = useRef<number | null>(null);
   const wasSilentRef = useRef(false);
   const hasTriggeredRef = useRef(false);
+  const speechDetectedRef = useRef(false);
 
   // Sync refs via effects (React 19 purity rules)
   const frequencyDataRef = useRef(frequencyData);
@@ -66,6 +69,11 @@ export default function useSilenceDetector(
 
       const currentlySilent = avg < thresholdRef.current;
 
+      if (!currentlySilent && !speechDetectedRef.current) {
+        speechDetectedRef.current = true;
+        setSpeechDetected(true);
+      }
+
       if (currentlySilent !== wasSilentRef.current) {
         wasSilentRef.current = currentlySilent;
         setIsSilent(currentlySilent);
@@ -101,5 +109,5 @@ export default function useSilenceDetector(
     wasSilentRef.current = false;
   }, []);
 
-  return { isSilent, silenceTriggered, resetTrigger };
+  return { isSilent, silenceTriggered, speechDetected, resetTrigger };
 }

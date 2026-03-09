@@ -1023,4 +1023,44 @@ YouTube台本で提示した5ステップ思考フレームワークのうち、
 - `frontend/src/app/onboarding/components/OnboardingProcessing.tsx` (新規)
 - `frontend/src/app/onboarding/components/OnboardingResult.tsx` (新規)
 
-*このドキュメントは2026年3月8日時点の開発状況を記録したものです。*
+---
+
+## 2026-03-09: Brain Dump — 30秒リズム質問生成
+
+### 設計思想
+Record機能を最もシンプルな形に。ユーザーは自由に話し、30秒ごとに直近の発話内容に基づいた質問が飛んでくる。沈黙検知やフェーズ遷移は使わず、タイマーベースの予測可能なリズム。
+
+### コアメカニクス
+```
+[0s]─話す─[20s]→API発火─[30s]→質問表示─話す─[50s]→API発火─[60s]→質問表示...
+```
+- 30秒間隔で質問表示（タイマーベース）
+- 表示10秒前にGeminiへprefetchリクエスト（レイテンシ吸収）
+- AI失敗時は静的質問プールにフォールバック
+- 60秒以上録音後のSTOP → インライン統合質問
+
+### 実装内容
+- **Equalizer**: 常時回転（`duration * 0.5°`）。カラーは固定（cyan→magenta）
+- **タイマー**: 控えめ化（text-[20px], opacity-0.6）
+- **質問表示**: タイプライター効果（clip-path）→ 5秒保持 → opacity fade out
+- **統合**: モーダル廃止、インラインで統合質問 + SKIP/DONEボタン
+- **AIバックエンド**: `POST /api/brain-dump/question`（フェーズ別）+ `/integration`
+- **Geminiプロンプト**: 15-30文字の内省の問い。expansion/connection/confrontation
+- **静的質問15問**: depth 1-3（回数ベースで深度遷移: 0-1→depth1, 2-4→depth2, 5+→depth3）
+- **触覚フィードバック**: @capacitor/haptics。質問=light、統合=medium
+
+### 変更ファイル
+- `frontend/src/app/record/page.tsx` (書き換え — 30秒リズム質問、インライン統合)
+- `frontend/src/components/recording/CircularEqualizer.tsx` (簡素化 — 回転+barHeight制御のみ)
+- `frontend/src/components/recording/StimulusPrompt.tsx` (書き換え — typewriter + opacity dissolve)
+- `frontend/src/components/recording/RecordTimer.tsx` (修正 — サイズ・opacity調整)
+- `frontend/src/data/stimulusQuestions.ts` (修正 — 5問追加、回数ベース深度選択)
+- `frontend/src/hooks/useBrainDumpQuestions.ts` (新規 — AI→staticフォールバック)
+- `frontend/src/hooks/useSilenceDetector.ts` (修正 — speechDetected追加)
+- `frontend/src/lib/api.ts` (修正 — brain-dump API追加)
+- `backend/src/routes/brain-dump.ts` (新規)
+- `backend/src/prompts/brain-dump-prompt.ts` (新規)
+- `backend/src/services/gemini.ts` (修正 — brain-dump関数追加)
+- `backend/src/app.ts` (修正 — brain-dumpルート登録)
+
+*このドキュメントは2026年3月9日時点の開発状況を記録したものです。*
