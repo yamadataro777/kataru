@@ -1,5 +1,17 @@
 # Git Worktree Log
 
+## 2026-03-09 (brain dump AI questions)
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: 547bb41 — Add AI-powered brain dump questions using Gemini Flash
+- **Changes**: 静的質問→Gemini Flash AIリアルタイム質問生成。backend prompt/route/gemini追加、frontend hook/API/UI更新
+
+## 2026-03-09 (dev features)
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: 9eac3eb — Re-implement dev features guarded by NEXT_PUBLIC_DEV_AUTH_BYPASS env var
+- **Changes**: 7ファイルにdev bypass/DEV MODE/overridePlan/dev-userを再実装。全てenv varガード付き
+
 ## 2026-03-09
 - **Branch**: kaizen-hypothesis
 - **Action**: commit + push
