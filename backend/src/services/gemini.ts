@@ -1,5 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { buildFreeReportPrompt, buildPaidReportPrompt } from '../prompts/report-prompt';
+import {
+  OnboardingType,
+  buildOnboardingThinkingPrompt,
+  buildOnboardingGoalPrompt,
+  buildOnboardingEmotionPrompt,
+} from '../prompts/onboarding-prompts';
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -62,6 +68,33 @@ export async function generateReport(transcript: string, plan: 'free' | 'paid' =
     return report;
   } catch (parseError) {
     console.error('Failed to parse Gemini JSON response:', text.substring(0, 500));
+    throw parseError;
+  }
+}
+
+export async function generateOnboardingReport(transcript: string, type: OnboardingType): Promise<Record<string, unknown>> {
+  const promptBuilders = {
+    thinking: buildOnboardingThinkingPrompt,
+    goal: buildOnboardingGoalPrompt,
+    emotion: buildOnboardingEmotionPrompt,
+  };
+
+  const prompt = promptBuilders[type](transcript);
+  const result = await model.generateContent(prompt);
+  let text = result.response.text();
+
+  text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.error('Gemini onboarding response did not contain valid JSON:', text.substring(0, 500));
+    throw new Error('Gemini response did not contain valid JSON');
+  }
+
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch (parseError) {
+    console.error('Failed to parse Gemini onboarding JSON:', text.substring(0, 500));
     throw parseError;
   }
 }

@@ -67,7 +67,7 @@ export default function HistoryClient() {
     <div className="flex flex-col h-dvh overflow-hidden">
       <Header />
 
-      <div className="flex-1 px-5 pb-20 overflow-y-auto" style={{ overscrollBehaviorY: 'contain' }}>
+      <div className="flex-1 px-5 pb-4 overflow-y-auto" style={{ overscrollBehaviorY: 'contain' }}>
         <div className="mt-4 mb-5">
           <span className="label">SESSION HISTORY</span>
           {topicFilter ? (

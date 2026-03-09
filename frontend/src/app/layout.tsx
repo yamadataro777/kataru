@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import ScanLines from '@/components/ui/ScanLines';
 import OfflineBanner from '@/components/ui/OfflineBanner';
+import SwipeBack from '@/components/ui/SwipeBack';
 import { AuthProvider } from '@/contexts/AuthContext';
 
 export const viewport: Viewport = {
@@ -46,7 +47,9 @@ export default function RootLayout({
         <AuthProvider>
           <OfflineBanner />
           <div className="relative w-full max-w-[390px] min-h-dvh mx-auto bg-bg-primary overflow-hidden">
-            {children}
+            <SwipeBack>
+              {children}
+            </SwipeBack>
           </div>
         </AuthProvider>
         <ScanLines />

@@ -973,4 +973,54 @@ YouTube台本で提示した5ステップ思考フレームワークのうち、
 - 新規DBテーブルなし（既存の`report->'topics'` JSONBをJS側でフィルタ）
 - History画面をpage.tsx + HistoryClient.tsxに分離（Next.js Suspense要件）
 
+---
+
+## Phase 14: オンボーディングフロー（2026-03-08）
+
+### 概要
+初回ユーザーが価値を理解しないままダッシュボードに直行する問題を解決。フルスクリーン4画面カルーセルで30秒以内にKataruの価値を伝え、初回録音への導線を構築。
+
+### 実装内容
+1. **`/onboarding` ページ新規作成** — 4画面カルーセル
+   - 画面1: コンセプト（サウンドウェーブアニメーション + キャッチコピー）
+   - 画面2: 3ステップ紹介（話す→分析→結論）
+   - 画面3: トライアル説明（5回無料、段階的機能開放）
+   - 画面4: CTA（セッション開始 or あとで）
+2. **ホーム画面リダイレクト** — `session_count === 0` かつ `localStorage` フラグなし → `/onboarding` へ `router.replace`
+
+### 設計判断
+- ページ vs オーバーレイ → 独立ページ（ルーティング明快、ダッシュボードを汚さない）
+- 状態管理 → `localStorage`（DB変更不要、オフライン対応）
+- スワイプ → `onTouchStart/Move/End` + CSS `transform: translateX()` でネイティブ感
+- 既存UI部品（`GlassCard`, `NeonButton`, `HudCorners`）を活用
+
+---
+
+## 2026-03-08: 体験ベース3セッション・オンボーディング
+
+### 概要
+既存の4スライドカルーセル型オンボーディングを、3つのミニセッション（実際に録音→AI分析→結果表示）に置き換え。ユーザーが初回利用で「思考が整理される体験」を直接体験できるようにした。
+
+### 3セッション構成
+1. **Session 1 — 思考の整理（cyan）**: 頭の中にあることを自由に話す → ThinkingMap（表層/深層/接続の3層分析）
+2. **Session 2 — 目標の明確化（magenta）**: 叶えたいことを話す → GoalAnalysis（欲求→行動→恐れの分解）
+3. **Session 3 — 感情の探索（lime）**: 心が動いた瞬間を話す → EmotionMap（感情パターン分析）
+
+### 技術実装
+- **ステートマシン**: 1ページ内で13フェーズを遷移（WELCOME → SESSION_N_INTRO/RECORD/PROCESSING/RESULT → COMPLETION）
+- **Backend**: `onboarding-prompts.ts`（3種プロンプト）、`gemini.ts`に`generateOnboardingReport`追加、`report.ts`で`onboarding_type`パラメータ対応
+- **Frontend**: `OnboardingRecorder`（録音）、`OnboardingProcessing`（処理）、`OnboardingResult`（結果表示）の3コンポーネント
+- **オンボーディングセッションは無料枠を消費しない**（`incrementSessionCount`をスキップ）
+- **進捗永続化**: `localStorage`で途中離脱→復帰に対応
+
+### 変更ファイル
+- `backend/src/prompts/onboarding-prompts.ts` (新規)
+- `backend/src/services/gemini.ts` (修正)
+- `backend/src/routes/report.ts` (修正)
+- `frontend/src/lib/api.ts` (修正)
+- `frontend/src/app/onboarding/page.tsx` (全面書き換え)
+- `frontend/src/app/onboarding/components/OnboardingRecorder.tsx` (新規)
+- `frontend/src/app/onboarding/components/OnboardingProcessing.tsx` (新規)
+- `frontend/src/app/onboarding/components/OnboardingResult.tsx` (新規)
+
 *このドキュメントは2026年3月8日時点の開発状況を記録したものです。*

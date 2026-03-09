@@ -31,10 +31,10 @@ export default function Header() {
   }, [refreshProfile]);
 
   return (
-    <header className="flex justify-between items-center px-5 py-3 flex-shrink-0" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+    <header className="flex justify-between items-center px-5 py-2 flex-shrink-0" style={{ paddingTop: 'max(8px, env(safe-area-inset-top))' }}>
       <div className="flex items-center gap-3">
         <h1
-          className="text-xl font-black tracking-[6px] text-neon-cyan"
+          className="text-lg font-black tracking-[5px] text-neon-cyan"
           style={{ textShadow: '0 0 20px rgba(0,212,255,0.5)' }}
         >
           KATARU
@@ -49,12 +49,12 @@ export default function Header() {
         </span>
         <Link
           href="/settings"
-          className="flex items-center justify-center w-7 h-7 rounded-md border border-[rgba(0,212,255,0.2)] bg-[rgba(0,212,255,0.05)] hover:bg-[rgba(0,212,255,0.1)] transition-colors"
+          className="flex items-center justify-center w-6 h-6 rounded-md border border-[rgba(0,212,255,0.2)] bg-[rgba(0,212,255,0.05)] hover:bg-[rgba(0,212,255,0.1)] transition-colors"
           aria-label="設定"
         >
           <svg
-            width="14"
-            height="14"
+            width="13"
+            height="13"
             viewBox="0 0 24 24"
             fill="none"
             stroke="rgba(0,212,255,0.7)"

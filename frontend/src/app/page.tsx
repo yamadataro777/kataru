@@ -28,7 +28,13 @@ export default function HomePage() {
 
   useEffect(() => {
     getSessions()
-      .then(setSessions)
+      .then((data) => {
+        setSessions(data);
+        // Redirect to onboarding if first-time user
+        if (data.length === 0 && !localStorage.getItem('kataru_onboarding_completed')) {
+          router.replace('/onboarding');
+        }
+      })
       .catch(() => setSessions([]));
 
     getConversations()
@@ -48,7 +54,7 @@ export default function HomePage() {
       <div className="flex flex-col h-dvh overflow-hidden">
         <Header />
 
-        <div className="flex-1 flex flex-col px-5 pb-20 overflow-y-auto" style={{ overscrollBehaviorY: 'contain' }}>
+        <div className="flex-1 flex flex-col px-5 pb-4 overflow-y-auto" style={{ overscrollBehaviorY: 'contain' }}>
           <div className="mt-4">
             {(() => {
               if (sessions.length === 0) {
