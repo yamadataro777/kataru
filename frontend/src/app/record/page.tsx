@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import CircularEqualizer from '@/components/recording/CircularEqualizer';
 import SilenceGauge from '@/components/recording/SilenceGauge';
@@ -19,12 +19,35 @@ const MIN_RECORDING_SECONDS = 30;
 export default function RecordPage() {
   const router = useRouter();
   const [tooShortWarning, setTooShortWarning] = useState(false);
+  const [milestoneMessage, setMilestoneMessage] = useState<string | null>(null);
+  const reachedMilestones = useRef<Set<number>>(new Set());
+  const milestoneTimerRef = useRef<number | null>(null);
+
   const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } = useAudioRecorder();
   const frequencyData = useAudioVisualizer(analyserNode);
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   const { activeQuestion, questionPhase, silenceProgress, silenceMessage, onContinue, onLater, onDifferent } = useAdaptiveIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
+
+  const energyLevel = useMemo(() => {
+    if (frequencyData.length === 0) return 0;
+    const activeBins = frequencyData.slice(0, 40);
+    const avg = activeBins.reduce((sum, v) => sum + v, 0) / activeBins.length;
+    return Math.min(1, avg * 2.25);
+  }, [frequencyData]);
+
+  const flowLabel = useMemo(() => {
+    if (duration < 15) return 'WARM UP';
+    if (duration < 60) return 'FLOW';
+    return 'DEEP FLOW';
+  }, [duration]);
+
+  const flowMessage = useMemo(() => {
+    if (energyLevel > 0.72) return 'いいリズムです。このまま流れに乗ってください';
+    if (energyLevel > 0.45) return '思考が広がっています。具体例まで話してみましょう';
+    return '最初の一言だけでOK。気楽に続けてください';
+  }, [energyLevel]);
 
   // Haptic feedback on new question
   useEffect(() => {
@@ -55,11 +78,46 @@ export default function RecordPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRecording]);
 
+  // Milestone feedback
+  useEffect(() => {
+    if (!isRecording) return;
+
+    const milestones: Array<{ second: number; message: string }> = [
+      { second: MIN_RECORDING_SECONDS, message: '解析できる長さに到達しました' },
+      { second: 60, message: '集中ゾーンに入りました' },
+      { second: 120, message: '深掘りモードです。核心に触れましょう' },
+    ];
+
+    const reached = milestones.find((m) => duration >= m.second && !reachedMilestones.current.has(m.second));
+    if (!reached) return;
+
+    reachedMilestones.current.add(reached.second);
+    setMilestoneMessage(reached.message);
+    triggerHaptic(reached.second === MIN_RECORDING_SECONDS ? 'medium' : 'heavy');
+
+    if (milestoneTimerRef.current !== null) {
+      window.clearTimeout(milestoneTimerRef.current);
+    }
+    milestoneTimerRef.current = window.setTimeout(() => {
+      setMilestoneMessage(null);
+      milestoneTimerRef.current = null;
+    }, 2200);
+  }, [duration, isRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (milestoneTimerRef.current !== null) {
+        window.clearTimeout(milestoneTimerRef.current);
+      }
+    };
+  }, []);
+
   // === Stop recording ===
   const handleStop = useCallback(() => {
+    triggerHaptic(duration >= MIN_RECORDING_SECONDS ? 'heavy' : 'light');
     stopRecording();
     stopListening();
-  }, [stopRecording, stopListening]);
+  }, [duration, stopRecording, stopListening]);
 
   // Navigate to processing after recording stops
   useEffect(() => {
@@ -78,13 +136,33 @@ export default function RecordPage() {
     }
   }, [audioBlob, isRecording, duration, transcript, router]);
 
-  const rotationDeg = duration * 0.5;
+  const rotationDeg = duration * 0.65;
+  const bgCyan = 0.14 + energyLevel * 0.26;
+  const bgMagenta = 0.11 + energyLevel * 0.2;
 
   return (
     <AuthGuard>
-      <div className="flex flex-col min-h-dvh">
+      <div
+        className="flex flex-col min-h-dvh relative overflow-hidden"
+        style={{
+          background: `
+            radial-gradient(circle at 50% 38%, rgba(0,212,255,${bgCyan}), transparent 42%),
+            radial-gradient(circle at 72% 72%, rgba(255,59,122,${bgMagenta}), transparent 46%),
+            linear-gradient(180deg, #050810 0%, #0A1020 100%)
+          `,
+        }}
+      >
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: 'linear-gradient(180deg, rgba(0,212,255,0.08), transparent 32%, rgba(255,59,122,0.08))',
+            opacity: 0.5 + energyLevel * 0.4,
+            animation: 'focus-breath 5.6s ease-in-out infinite',
+          }}
+        />
+
         {/* Header */}
-        <div className="px-5 py-3 flex-shrink-0">
+        <div className="px-5 py-3 flex-shrink-0 relative z-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span
@@ -122,35 +200,65 @@ export default function RecordPage() {
           </div>
         </div>
 
-        {/* Equalizer + Timer + Silence Message */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+        {/* Equalizer + Timer + Flow Message */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 relative z-10 px-5">
           <div className="relative" style={{ width: 240, height: 240 }}>
             <CircularEqualizer
               frequencyData={frequencyData}
               size={240}
               rotationDeg={rotationDeg}
+              energy={energyLevel}
             />
-            <SilenceGauge progress={silenceProgress} size={240} />
+            <SilenceGauge progress={silenceProgress} isSpeakingNow={energyLevel > 0.15} size={240} />
           </div>
 
-          <RecordTimer seconds={duration} />
+          <RecordTimer seconds={duration} minSeconds={MIN_RECORDING_SECONDS} />
 
-          {/* Silence message */}
-          {silenceMessage && !activeQuestion && (
-            <p
-              className="text-[11px] text-hud-white tracking-wide text-center"
-              style={{
-                opacity: 0.35,
-                animation: 'breath-fade 3s ease-in-out infinite',
-              }}
-            >
-              {silenceMessage}
-            </p>
-          )}
+          <div className="min-h-10 flex flex-col items-center justify-center gap-1 text-center">
+            {milestoneMessage ? (
+              <p
+                className="text-[12px] tracking-[1.5px] text-neon-lime"
+                style={{
+                  textShadow: '0 0 14px rgba(168,255,0,0.55)',
+                  animation: 'milestone-burst 0.7s ease-out',
+                }}
+              >
+                {milestoneMessage}
+              </p>
+            ) : (
+              <>
+                <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-75">{flowLabel}</p>
+                <p
+                  className="text-[11px] text-hud-white tracking-wide"
+                  style={{ opacity: 0.6 + energyLevel * 0.3 }}
+                >
+                  {flowMessage}
+                </p>
+              </>
+            )}
+
+            {silenceMessage && !activeQuestion && (
+              <p
+                className="text-[10px] text-hud-white tracking-wide"
+                style={{
+                  opacity: 0.35,
+                  animation: 'breath-fade 3s ease-in-out infinite',
+                }}
+              >
+                {silenceMessage}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Transcript */}
-        <div className="px-5 mb-4 max-h-32 overflow-y-auto" style={{ scrollBehavior: 'smooth' }}>
+        <div
+          className="px-5 mb-4 max-h-32 overflow-y-auto relative z-10"
+          style={{
+            scrollBehavior: 'smooth',
+            maskImage: 'linear-gradient(to top, black 72%, transparent 100%)',
+          }}
+        >
           {transcriptionError ? (
             <p className="text-xs text-neon-lime opacity-70 tracking-wide text-center">
               {transcriptionError}
@@ -172,7 +280,7 @@ export default function RecordPage() {
 
         {/* Too short warning */}
         {tooShortWarning && (
-          <div className="px-5 mb-4 flex flex-col items-center gap-3">
+          <div className="px-5 mb-4 flex flex-col items-center gap-3 relative z-10">
             <p className="text-xs text-neon-magenta tracking-[1px] text-center">
               もう少し話してみませんか？
             </p>
@@ -190,9 +298,14 @@ export default function RecordPage() {
         )}
 
         {/* Controls */}
-        <div className={`pb-8 px-5 ${activeQuestion ? 'mb-[120px]' : ''}`}>
+        <div className={`pb-8 px-5 relative z-10 ${activeQuestion ? 'mb-[120px]' : ''}`}>
           {!tooShortWarning && (
-            <RecordControls onStop={handleStop} isRecording={isRecording} />
+            <RecordControls
+              onStop={handleStop}
+              isRecording={isRecording}
+              seconds={duration}
+              minSeconds={MIN_RECORDING_SECONDS}
+            />
           )}
         </div>
 
