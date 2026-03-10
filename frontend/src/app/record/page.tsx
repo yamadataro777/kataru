@@ -9,7 +9,7 @@ import StimulusPrompt from '@/components/recording/StimulusPrompt';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
 import useTranscription from '@/hooks/useTranscription';
-import useQuestionIntervention from '@/hooks/useQuestionIntervention';
+import useAdaptiveIntervention from '@/hooks/useAdaptiveIntervention';
 import AuthGuard from '@/components/auth/AuthGuard';
 import NeonButton from '@/components/ui/NeonButton';
 
@@ -23,8 +23,8 @@ export default function RecordPage() {
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // Silence-based question intervention — transcript mode (browser) or audio fallback (iOS)
-  const { activeQuestion, questionPhase } = useQuestionIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
+  // Adaptive intervention — nudges (4-7s) + questions (7s+) with context-aware selection
+  const { activeQuestion, questionPhase, interventionType } = useAdaptiveIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
 
   // Haptic feedback on new question
   useEffect(() => {
@@ -124,6 +124,7 @@ export default function RecordPage() {
           <StimulusPrompt
             question={activeQuestion}
             phase={questionPhase}
+            isNudge={interventionType === 'nudge'}
           />
         </div>
 

@@ -1084,4 +1084,27 @@ Record機能を最もシンプルな形に。ユーザーは自由に話し、30
 - `frontend/src/hooks/useBrainDumpQuestions.ts`
 - `frontend/src/data/stimulusQuestions.ts`
 
+### 2026-03-10: アダプティブ質問生成システム
+
+**目的:** ユーザーの発話内容に無関係なランダム質問から、コンテキスト適応型の3層質問生成へ進化。DialogueのエッセンスをRecord（モノローグ）に最適化して転用。
+
+**設計 — 3層ハイブリッドアーキテクチャ:**
+- **レベル1（即座）**: ローカルライブラリからランダム選択（最初の2回の介入）
+- **レベル2（即座）**: フェーズ＋コンテキストによるカテゴリスコアリング選択（3回目以降）
+- **レベル3（2-4秒）**: Gemini APIでtranscript連動のAI質問をバックグラウンド生成、キャッシュして次の沈黙で使用
+
+**新機能:**
+- 相づちナッジ（4-7秒の沈黙→「うんうん」「それで？」を控えめ表示）
+- 3フェーズ自動遷移: expansion(0-3分) → connection(3-7分) → confrontation(7分+)
+- 感情検知: 強い感情語2つ以上で受容ナッジに切替（深掘りしない）
+- 軽量コンテキスト抽出: transcript文字数から情報密度を推定
+- パラメータ調整: クールダウン30→25秒、最大介入8→10回
+
+**変更ファイル:**
+- `frontend/src/hooks/useAdaptiveIntervention.ts` (新規 — useQuestionIntervention.tsの置換)
+- `frontend/src/lib/question-library.ts` (拡張 — ナッジ、感情語辞書、scoreCategories、selectAdaptiveQuestion追加)
+- `frontend/src/components/recording/StimulusPrompt.tsx` (拡張 — isNudgeプロップ、控えめスタイル)
+- `frontend/src/app/record/page.tsx` (更新 — 新hook接続、interventionType表示分岐)
+- `frontend/src/hooks/useQuestionIntervention.ts` (削除)
+
 *このドキュメントは2026年3月10日時点の開発状況を記録したものです。*

@@ -17,6 +17,8 @@ export type QuestionCategory =
   | 'perspective'
   | 'structure';
 
+export type Phase = 'expansion' | 'connection' | 'confrontation';
+
 const questions: Question[] = [
   // === deepening ===
   { id: 'd1', category: 'deepening', text: '他には？', triggerAffinity: 'silence', depth: 1, timing: 'early' },
@@ -65,7 +67,150 @@ const questions: Question[] = [
   { id: 'r2', category: 'structure', text: 'いま少し避けた話題は？', triggerAffinity: 'silence', depth: 3, timing: 'mid' },
   { id: 'r3', category: 'structure', text: 'さっきの話と、今の話はつながってる？', triggerAffinity: 'silence', depth: 2, timing: 'mid' },
   { id: 'r4', category: 'structure', text: 'もう一つの視点から見ると？', triggerAffinity: 'silence', depth: 2, timing: 'any' },
+
+  // === stuck (depth:1, for 15s+ silence) ===
+  { id: 'st1', category: 'deepening', text: '今、頭に浮かんでいることをそのまま', triggerAffinity: 'silence', depth: 1, timing: 'any' },
+  { id: 'st2', category: 'deepening', text: '違う話題でもいいよ', triggerAffinity: 'silence', depth: 1, timing: 'any' },
 ];
+
+// === Nudge texts (depth:0 equivalent, 4-7s silence) ===
+const nudges = [
+  'うんうん',
+  'それで？',
+  '続けて',
+  'ふむふむ',
+  'なるほど',
+];
+
+// === Emotional acceptance nudges ===
+const emotionalNudges = [
+  'そうだよね',
+  'それ、大事な話だね',
+  'もう少し聞かせて',
+];
+
+// === Emotion word dictionary for frontend-only detection ===
+const emotionWords: Record<string, 'positive' | 'negative' | 'strong'> = {
+  // Strong emotions (trigger acceptance nudge)
+  '辛い': 'strong', 'つらい': 'strong', 'しんどい': 'strong',
+  '悔しい': 'strong', 'くやしい': 'strong',
+  '怖い': 'strong', 'こわい': 'strong',
+  '不安': 'strong', '苦しい': 'strong', 'くるしい': 'strong',
+  '泣き': 'strong', '涙': 'strong',
+  '怒り': 'strong', '腹が立つ': 'strong', 'むかつく': 'strong',
+  '悲しい': 'strong', 'かなしい': 'strong',
+  '嫌い': 'strong', 'きらい': 'strong',
+  '死にたい': 'strong', '消えたい': 'strong',
+  '許せない': 'strong', 'ゆるせない': 'strong',
+  '嬉しい': 'positive', 'うれしい': 'positive',
+  '楽しい': 'positive', 'たのしい': 'positive',
+  '感動': 'positive', '感謝': 'positive',
+};
+
+export function selectNudge(): string {
+  return nudges[Math.floor(Math.random() * nudges.length)];
+}
+
+export function selectEmotionalNudge(): string {
+  return emotionalNudges[Math.floor(Math.random() * emotionalNudges.length)];
+}
+
+/**
+ * Detect strong emotion in the latest transcript segment.
+ * Returns true if 2+ strong emotion words are found in the last 200 chars.
+ */
+export function detectStrongEmotion(transcript: string): boolean {
+  const last200 = transcript.slice(-200);
+  let count = 0;
+  for (const word of Object.keys(emotionWords)) {
+    if (emotionWords[word] === 'strong' && last200.includes(word)) {
+      count++;
+      if (count >= 2) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Lightweight frontend-only context extraction.
+ */
+export function extractLightContext(transcript: string): {
+  informationDensity: 'high' | 'medium' | 'low';
+  topicCount: number;
+} {
+  const last500 = transcript.slice(-500);
+  const density = last500.length > 300 ? 'high' : last500.length > 100 ? 'medium' : 'low';
+
+  // Simple topic counting: count unique sentence-ending patterns as proxy for topic shifts
+  const sentences = last500.split(/[。！？\n]/).filter(s => s.length > 5);
+  const topicCount = Math.min(sentences.length, 10);
+
+  return { informationDensity: density, topicCount };
+}
+
+export function getPhase(durationSec: number): Phase {
+  if (durationSec < 180) return 'expansion';
+  if (durationSec < 420) return 'connection';
+  return 'confrontation';
+}
+
+/**
+ * Score categories based on phase, context, and recent usage.
+ */
+export function scoreCategories(
+  phase: Phase,
+  informationDensity: 'high' | 'medium' | 'low',
+  topicCount: number,
+  recentCategories: string[],
+): Record<QuestionCategory, number> {
+  const scores: Record<QuestionCategory, number> = {
+    deepening: 40,
+    emotion: 20,
+    priority: 15,
+    summary: 10,
+    causality: 15,
+    action: 10,
+    perspective: 15,
+    structure: 15,
+  };
+
+  // Phase boost
+  if (phase === 'expansion') {
+    scores.deepening += 30;
+    scores.emotion += 10;
+  } else if (phase === 'connection') {
+    scores.structure += 30;
+    scores.causality += 20;
+    scores.perspective += 10;
+  } else {
+    scores.perspective += 30;
+    scores.causality += 20;
+    scores.priority += 20;
+    scores.summary += 15;
+  }
+
+  // Context adjustments
+  if (informationDensity === 'low') {
+    scores.deepening += 20;
+  }
+  if (informationDensity === 'high') {
+    scores.summary += 20;
+    scores.priority += 15;
+  }
+  if (topicCount >= 3) {
+    scores.structure += 15;
+  }
+
+  // Recent category avoidance
+  const recent = recentCategories.slice(-2);
+  for (const cat of recent) {
+    if (cat in scores) {
+      scores[cat as QuestionCategory] -= 30;
+    }
+  }
+
+  return scores;
+}
 
 interface SelectContext {
   durationSec: number;
@@ -86,24 +231,21 @@ function getTargetDepth(interventionCount: number): 1 | 2 | 3 {
   return 3;
 }
 
+/** Original selection function (Level 1 — random from library). */
 export function selectQuestion(ctx: SelectContext): Question | null {
   const timing = getTimingBand(ctx.durationSec);
   const targetDepth = getTargetDepth(ctx.interventionCount);
 
-  // Step 1: Exclude already used
   let pool = questions.filter((q) => !ctx.usedIds.has(q.id));
   if (pool.length === 0) return null;
 
-  // Step 2: Filter by timing (match or 'any')
   const timingPool = pool.filter((q) => q.timing === timing || q.timing === 'any');
   if (timingPool.length > 0) pool = timingPool;
 
-  // Step 3: Avoid recently used categories (last 2)
   const recentCategories = ctx.usedCategories.slice(-2);
   const categoryPool = pool.filter((q) => !recentCategories.includes(q.category));
   if (categoryPool.length > 0) pool = categoryPool;
 
-  // Step 4: Prefer target depth, but allow ±1
   const exactDepth = pool.filter((q) => q.depth === targetDepth);
   if (exactDepth.length > 0) {
     pool = exactDepth;
@@ -112,6 +254,52 @@ export function selectQuestion(ctx: SelectContext): Question | null {
     if (nearDepth.length > 0) pool = nearDepth;
   }
 
-  // Step 5: Random pick
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Level 2 — adaptive selection using category scoring.
+ * Picks the best category via scoring, then selects a question from that category.
+ */
+export function selectAdaptiveQuestion(ctx: SelectContext & {
+  phase: Phase;
+  informationDensity: 'high' | 'medium' | 'low';
+  topicCount: number;
+  isStuck?: boolean;
+}): Question | null {
+  const targetDepth = ctx.isStuck ? 1 : getTargetDepth(ctx.interventionCount);
+
+  let pool = questions.filter((q) => !ctx.usedIds.has(q.id));
+  if (pool.length === 0) return null;
+
+  // If stuck (15s+), prefer easy depth:1 questions
+  if (ctx.isStuck) {
+    const easyPool = pool.filter(q => q.depth === 1);
+    if (easyPool.length > 0) pool = easyPool;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // Score categories and pick top category
+  const scores = scoreCategories(ctx.phase, ctx.informationDensity, ctx.topicCount, ctx.usedCategories);
+  const sorted = (Object.entries(scores) as [QuestionCategory, number][])
+    .sort((a, b) => b[1] - a[1]);
+
+  // Try each category in score order until we find a matching question
+  for (const [category] of sorted) {
+    const catPool = pool.filter(q => q.category === category);
+    if (catPool.length === 0) continue;
+
+    // Depth preference
+    const exactDepth = catPool.filter(q => q.depth === targetDepth);
+    if (exactDepth.length > 0) {
+      return exactDepth[Math.floor(Math.random() * exactDepth.length)];
+    }
+    const nearDepth = catPool.filter(q => Math.abs(q.depth - targetDepth) <= 1);
+    if (nearDepth.length > 0) {
+      return nearDepth[Math.floor(Math.random() * nearDepth.length)];
+    }
+    return catPool[Math.floor(Math.random() * catPool.length)];
+  }
+
   return pool[Math.floor(Math.random() * pool.length)];
 }

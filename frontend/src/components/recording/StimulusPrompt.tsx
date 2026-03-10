@@ -6,9 +6,10 @@ interface StimulusPromptProps {
   question: string | null;
   phase: 'typing' | 'hold' | null;
   isIntegration?: boolean;
+  isNudge?: boolean;
 }
 
-export default function StimulusPrompt({ question, phase, isIntegration = false }: StimulusPromptProps) {
+export default function StimulusPrompt({ question, phase, isIntegration = false, isNudge = false }: StimulusPromptProps) {
   const [revealPercent, setRevealPercent] = useState(0);
   const rafRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
@@ -43,17 +44,20 @@ export default function StimulusPrompt({ question, phase, isIntegration = false 
     return <div className="h-12" />;
   }
 
-  const color = isIntegration ? 'var(--neon-cyan)' : 'var(--neon-lime)';
+  const color = isNudge
+    ? 'var(--hud-white)'
+    : isIntegration ? 'var(--neon-cyan)' : 'var(--neon-lime)';
   const glowColor = isIntegration ? 'rgba(0,212,255,0.3)' : 'rgba(168,255,0,0.3)';
 
   return (
     <div className="h-12 flex items-center justify-center px-5">
       <span
-        className="font-mono text-[12px] tracking-[1.5px] text-center block"
+        className={`font-mono tracking-[1.5px] text-center block ${isNudge ? 'text-[10px]' : 'text-[12px]'}`}
         style={{
           color,
-          textShadow: `0 0 12px ${glowColor}`,
-          clipPath: phase === 'typing' ? `inset(0 ${100 - revealPercent}% 0 0)` : undefined,
+          opacity: isNudge ? 0.5 : 1,
+          textShadow: isNudge ? 'none' : `0 0 12px ${glowColor}`,
+          clipPath: phase === 'typing' && !isNudge ? `inset(0 ${100 - revealPercent}% 0 0)` : undefined,
         }}
       >
         {question}
