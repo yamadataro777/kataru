@@ -76,10 +76,21 @@ export default function useTranscription(): TranscriptionResult {
 
     recognition.onerror = (event: { error: string }) => {
       if (event.error === 'no-speech') return;
-      if (event.error === 'network') {
-        setError('音声認識サービスに接続できません。録音は継続中です — 文字起こしはサーバー側で行います。');
-      } else if (event.error === 'not-allowed') {
+
+      // Stop restart loop on fatal errors
+      const fatal = event.error === 'not-allowed' || event.error === 'aborted';
+      if (fatal) {
+        const ref = recognitionRef.current;
+        recognitionRef.current = null;
+        if (ref) { ref.onend = null; }
+      }
+
+      if (event.error === 'not-allowed') {
         setError('マイクへのアクセスが許可されていません。');
+      } else if (event.error === 'aborted' || event.error === 'network') {
+        // iOS WKWebView doesn't support Web Speech API — silently degrade.
+        // Recording continues; transcription happens server-side via Whisper.
+        setError(null);
       } else {
         setError(`音声認識エラー: ${event.error}`);
       }
