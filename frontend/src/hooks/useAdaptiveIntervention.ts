@@ -150,7 +150,7 @@ export default function useAdaptiveIntervention(
       usedIdsRef.current = new Set();
       usedCategoriesRef.current = [];
       interventionCountRef.current = 0;
-      lastInterventionTimeRef.current = 0;
+      lastInterventionTimeRef.current = -COOLDOWN_SEC;
       firedRef.current = false;
       aiQuestionRef.current = null;
       aiGeneratingRef.current = false;
@@ -241,13 +241,9 @@ export default function useAdaptiveIntervention(
   useEffect(() => {
     if (!isRecording) return;
     if (duration < SESSION_WARMUP_SEC) return;
-    if (interventionCountRef.current >= MAX_INTERVENTIONS) {
-      if (duration % 10 === 0) console.log('[intervention] MAX reached, skipping');
-      return;
-    }
+    if (interventionCountRef.current >= MAX_INTERVENTIONS) return;
 
     const silenceMs = silenceMsRef.current;
-    if (duration % 5 === 0) console.log(`[intervention] dur=${duration}s silence=${silenceMs}ms fired=${firedRef.current} count=${interventionCountRef.current} cooldown=${duration - lastInterventionTimeRef.current}s`);
 
     // Track silence for long talk detection
     if (silenceMs >= 3000) {
@@ -333,7 +329,6 @@ export default function useAdaptiveIntervention(
     if (silenceMs >= QUESTION_THRESHOLD_MS) {
       if (firedRef.current) return;
       firedRef.current = true;
-      console.log(`[intervention] TRIGGER4 fired! silenceMs=${silenceMs}`);
 
       // Emotion override
       if (detectStrongEmotion(transcript)) {
@@ -393,12 +388,8 @@ export default function useAdaptiveIntervention(
         }
       }
 
-      if (!questionText) {
-        console.log('[intervention] No question selected!');
-        return;
-      }
+      if (!questionText) return;
 
-      console.log(`[intervention] Showing: "${questionText}" cat=${currentCategoryRef.current}`);
       interventionCountRef.current += 1;
       lastInterventionTimeRef.current = duration;
       showQuestion(questionText, currentCategoryRef.current);
