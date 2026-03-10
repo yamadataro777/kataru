@@ -29,17 +29,18 @@ const MILESTONES: {
     description: 'フルレポートを体験',
     icon: '03',
   },
-  {
-    phase: 'dialogue_preview',
-    label: 'AI対話',
-    description: '対話モードを体験',
-    icon: '04',
-  },
+  // dialogue_preview temporarily hidden
+  // {
+  //   phase: 'dialogue_preview',
+  //   label: 'AI対話',
+  //   description: '対話モードを体験',
+  //   icon: '04',
+  // },
   {
     phase: 'exhausted',
     label: '全機能体験済',
     description: 'アップグレードで無制限に',
-    icon: '05',
+    icon: '04',
   },
 ];
 
@@ -47,7 +48,7 @@ const PHASE_ORDER: SessionPhase[] = [
   'intro',
   'teaser',
   'full_preview',
-  'dialogue_preview',
+  // 'dialogue_preview', // temporarily hidden
   'exhausted',
 ];
 

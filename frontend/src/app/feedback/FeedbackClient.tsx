@@ -171,7 +171,7 @@ export default function FeedbackClient() {
               {[
                 '無制限の録音セッション',
                 '詳細分析レポート・アクション提案',
-                'AI対話モード',
+                'AI対話モード (近日公開)',
                 '月次分析レポート',
                 'レポート永久保存',
               ].map((feature, i) => (

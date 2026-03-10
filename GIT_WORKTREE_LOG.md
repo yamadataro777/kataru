@@ -41,3 +41,9 @@
 - **Action**: commit + push
 - **Commit**: d0c06cf — Improve App Store submission readiness
 - **Changes**: RevenueCatテストキー警告、Error Boundary追加、PrivacyInfo.xcprivacy API宣言追加、LaunchScreen AutoLayout化、オフラインバナー追加
+
+## 2026-03-09
+- **Branch**: question-generation-brain-dump
+- **Action**: commit + push
+- **Commit**: 23c879c Remove text input mode and simplify record page UI
+- **Changes**: Record画面からテキスト入力モード・ガイダンスボックス削除、ヘッダー簡素化、質問表示をdissolveせず残す

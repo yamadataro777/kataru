@@ -179,7 +179,7 @@ export default function LandingPage() {
           </p>
         </GlassCard>
 
-        {/* Dialogue Mode */}
+        {/* Dialogue Mode — temporarily hidden
         <GlassCard variant="magenta" className="p-5" hudCorners>
           <div className="flex items-center gap-3 mb-3">
             <div
@@ -201,6 +201,7 @@ export default function LandingPage() {
             {LP.modes.dialogue.description}
           </p>
         </GlassCard>
+        */}
       </section>
 
       {/* ── Divider ── */}
