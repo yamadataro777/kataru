@@ -104,13 +104,10 @@ export async function transcribe(sessionId: string, transcript?: string): Promis
   });
 }
 
-export async function generateReport(sessionId: string, onboardingType?: string): Promise<unknown> {
+export async function generateReport(sessionId: string): Promise<unknown> {
   return request('/api/report', {
     method: 'POST',
-    body: JSON.stringify({
-      session_id: sessionId,
-      ...(onboardingType && { onboarding_type: onboardingType }),
-    }),
+    body: JSON.stringify({ session_id: sessionId }),
   });
 }
 

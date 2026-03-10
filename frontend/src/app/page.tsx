@@ -30,10 +30,6 @@ export default function HomePage() {
     getSessions()
       .then((data) => {
         setSessions(data);
-        // Redirect to onboarding if first-time user
-        if (data.length === 0 && !localStorage.getItem('kataru_onboarding_completed')) {
-          router.replace('/onboarding');
-        }
       })
       .catch(() => setSessions([]));
 
