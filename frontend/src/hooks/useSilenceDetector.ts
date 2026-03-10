@@ -2,54 +2,61 @@
 
 import { useRef, useEffect } from 'react';
 
-const SILENCE_THRESHOLD = 15;
-const POLL_INTERVAL_MS = 200;
+const POLL_INTERVAL_MS = 500;
 
 /**
- * Detects silence by polling AnalyserNode frequency data.
- * Returns a ref (not state) to avoid re-renders on every poll cycle.
- * The ref value represents accumulated silence in milliseconds.
+ * Detects "silence" by tracking when transcript stops updating.
+ * Uses Web Speech API output (not audio levels) — immune to ambient noise.
+ * Returns a ref with accumulated silence in milliseconds (no re-renders).
  */
 export default function useSilenceDetector(
-  analyserNode: AnalyserNode | null,
+  transcript: string,
+  interimTranscript: string,
   isRecording: boolean,
 ): React.MutableRefObject<number> {
   const silenceMsRef = useRef(0);
-  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const lastTranscriptRef = useRef('');
+  const lastInterimRef = useRef('');
+  const lastChangeTimeRef = useRef(0);
 
+  // Track transcript changes
   useEffect(() => {
-    if (!isRecording || !analyserNode) {
+    if (!isRecording) return;
+
+    if (
+      transcript !== lastTranscriptRef.current ||
+      interimTranscript !== lastInterimRef.current
+    ) {
+      lastTranscriptRef.current = transcript;
+      lastInterimRef.current = interimTranscript;
+      lastChangeTimeRef.current = Date.now();
       silenceMsRef.current = 0;
+    }
+  }, [transcript, interimTranscript, isRecording]);
+
+  // Poll to accumulate silence duration
+  useEffect(() => {
+    if (!isRecording) {
+      silenceMsRef.current = 0;
+      lastChangeTimeRef.current = 0;
+      lastTranscriptRef.current = '';
+      lastInterimRef.current = '';
       return;
     }
 
-    const bufferLength = analyserNode.frequencyBinCount;
-    if (!dataArrayRef.current || dataArrayRef.current.length !== bufferLength) {
-      dataArrayRef.current = new Uint8Array(bufferLength);
-    }
+    // Initialize on recording start
+    lastChangeTimeRef.current = Date.now();
 
     const interval = setInterval(() => {
-      const data = dataArrayRef.current!;
-      analyserNode.getByteFrequencyData(data);
-
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sum += data[i];
-      }
-      const avg = sum / bufferLength;
-
-      if (avg < SILENCE_THRESHOLD) {
-        silenceMsRef.current += POLL_INTERVAL_MS;
-      } else {
-        silenceMsRef.current = 0;
-      }
+      if (lastChangeTimeRef.current === 0) return;
+      silenceMsRef.current = Date.now() - lastChangeTimeRef.current;
     }, POLL_INTERVAL_MS);
 
     return () => {
       clearInterval(interval);
       silenceMsRef.current = 0;
     };
-  }, [analyserNode, isRecording]);
+  }, [isRecording]);
 
   return silenceMsRef;
 }

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useSilenceDetector from './useSilenceDetector';
-import { selectQuestion, type Question } from '@/lib/question-library';
+import { selectQuestion } from '@/lib/question-library';
 
 const SILENCE_TRIGGER_MS = 7000;
 const COOLDOWN_SEC = 30;
@@ -15,11 +15,12 @@ interface UseQuestionInterventionReturn {
 }
 
 export default function useQuestionIntervention(
-  analyserNode: AnalyserNode | null,
+  transcript: string,
+  interimTranscript: string,
   isRecording: boolean,
   duration: number,
 ): UseQuestionInterventionReturn {
-  const silenceMsRef = useSilenceDetector(analyserNode, isRecording);
+  const silenceMsRef = useSilenceDetector(transcript, interimTranscript, isRecording);
 
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
   const [questionPhase, setQuestionPhase] = useState<'typing' | 'hold' | null>(null);
