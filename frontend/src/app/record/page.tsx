@@ -9,13 +9,11 @@ import StimulusPrompt from '@/components/recording/StimulusPrompt';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
 import useTranscription from '@/hooks/useTranscription';
-import useBrainDumpQuestions from '@/hooks/useBrainDumpQuestions';
+import useQuestionIntervention from '@/hooks/useQuestionIntervention';
 import AuthGuard from '@/components/auth/AuthGuard';
 import NeonButton from '@/components/ui/NeonButton';
 
 const MIN_RECORDING_SECONDS = 30;
-const QUESTION_INTERVAL = 30; // seconds between questions
-const PREFETCH_LEAD_TIME = 10; // seconds before display to start API call
 
 export default function RecordPage() {
   const router = useRouter();
@@ -24,17 +22,16 @@ export default function RecordPage() {
   const frequencyData = useAudioVisualizer(analyserNode);
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const { getQuestion, reset: resetQuestions } = useBrainDumpQuestions();
 
-  // Question state
-  const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
-  const [questionPhase, setQuestionPhase] = useState<'typing' | 'hold' | null>(null);
-  const prefetchedRef = useRef<string | null>(null);
-  const prefetchingRef = useRef(false);
-  const transcriptRef = useRef(transcript);
+  // Silence-based question intervention (replaces API-based brain dump questions)
+  const { activeQuestion, questionPhase } = useQuestionIntervention(analyserNode, isRecording, duration);
 
-  // Keep transcript ref in sync
-  useEffect(() => { transcriptRef.current = transcript; }, [transcript]);
+  // Haptic feedback on new question
+  useEffect(() => {
+    if (activeQuestion && questionPhase === 'typing') {
+      triggerHaptic('light');
+    }
+  }, [activeQuestion, questionPhase]);
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -58,39 +55,6 @@ export default function RecordPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRecording]);
 
-  // === 30-second rhythm: Prefetch question 10s before display ===
-  useEffect(() => {
-    if (!isRecording) return;
-    if (duration < QUESTION_INTERVAL - PREFETCH_LEAD_TIME) return;
-    if (duration % QUESTION_INTERVAL !== QUESTION_INTERVAL - PREFETCH_LEAD_TIME) return;
-    if (prefetchingRef.current) return;
-
-    prefetchingRef.current = true;
-    getQuestion(transcriptRef.current, duration).then(q => {
-      prefetchedRef.current = q;
-      prefetchingRef.current = false;
-    }).catch(() => {
-      prefetchingRef.current = false;
-    });
-  }, [duration, isRecording, getQuestion]);
-
-  // === 30-second rhythm: Display question (stays visible until replaced) ===
-  useEffect(() => {
-    if (!isRecording) return;
-    if (duration < QUESTION_INTERVAL || duration % QUESTION_INTERVAL !== 0) return;
-
-    const question = prefetchedRef.current;
-    prefetchedRef.current = null;
-    if (!question) return;
-
-    setActiveQuestion(question);
-    setQuestionPhase('typing');
-    triggerHaptic('light');
-
-    const typingMs = question.length * 67;
-    setTimeout(() => setQuestionPhase('hold'), typingMs);
-  }, [duration, isRecording]);
-
   // === Stop recording ===
   const handleStop = useCallback(() => {
     stopRecording();
@@ -113,17 +77,6 @@ export default function RecordPage() {
       reader.readAsDataURL(audioBlob);
     }
   }, [audioBlob, isRecording, duration, transcript, router]);
-
-  // Reset on re-record
-  useEffect(() => {
-    if (isRecording) {
-      setActiveQuestion(null);
-      setQuestionPhase(null);
-      prefetchedRef.current = null;
-      prefetchingRef.current = false;
-      resetQuestions();
-    }
-  }, [isRecording, resetQuestions]);
 
   const rotationDeg = duration * 0.5;
 

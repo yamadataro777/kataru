@@ -1063,4 +1063,25 @@ Record機能を最もシンプルな形に。ユーザーは自由に話し、30
 - `backend/src/services/gemini.ts` (修正 — brain-dump関数追加)
 - `backend/src/app.ts` (修正 — brain-dumpルート登録)
 
-*このドキュメントは2026年3月9日時点の開発状況を記録したものです。*
+---
+
+### 2026-03-10: Hybrid Question Intervention System（MVP）
+
+**目的:** 固定30秒間隔のAPI依存質問生成を、沈黙検知ベース + 質問ライブラリ方式に置換。レイテンシゼロ・API呼び出しゼロで自然なタイミングの質問介入を実現。
+
+**設計:**
+- 7秒以上の沈黙を検知して質問を発火（`useSilenceDetector` — AnalyserNode 200msポーリング、ref方式で再レンダリ防止）
+- 32問の質問ライブラリ（8カテゴリ × 4問）から5段階フィルタで選択（timing → category重複排除 → depth → ランダム）
+- ウォームアップ60秒、クールダウン30秒、最大8回/セッション
+
+**変更ファイル:**
+- `frontend/src/lib/question-library.ts` (新規 — 32問ライブラリ + selectQuestion)
+- `frontend/src/hooks/useSilenceDetector.ts` (書き換え — ref方式、AnalyserNode直接ポーリング)
+- `frontend/src/hooks/useQuestionIntervention.ts` (新規 — 沈黙トリガー + 質問表示管理)
+- `frontend/src/app/record/page.tsx` (修正 — useBrainDumpQuestions → useQuestionIntervention に置換)
+
+**無効化されたファイル（未使用）:**
+- `frontend/src/hooks/useBrainDumpQuestions.ts`
+- `frontend/src/data/stimulusQuestions.ts`
+
+*このドキュメントは2026年3月10日時点の開発状況を記録したものです。*

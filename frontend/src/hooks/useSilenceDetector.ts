@@ -1,113 +1,55 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 
-interface UseSilenceDetectorOptions {
-  threshold?: number;
-  silenceDurationMs?: number;
-  enabled?: boolean;
-}
+const SILENCE_THRESHOLD = 15;
+const POLL_INTERVAL_MS = 200;
 
-interface UseSilenceDetectorReturn {
-  isSilent: boolean;
-  silenceTriggered: boolean;
-  speechDetected: boolean;
-  resetTrigger: () => void;
-}
-
+/**
+ * Detects silence by polling AnalyserNode frequency data.
+ * Returns a ref (not state) to avoid re-renders on every poll cycle.
+ * The ref value represents accumulated silence in milliseconds.
+ */
 export default function useSilenceDetector(
-  frequencyData: number[],
-  options: UseSilenceDetectorOptions = {},
-): UseSilenceDetectorReturn {
-  const {
-    threshold = 0.05,
-    silenceDurationMs = 4000,
-    enabled = true,
-  } = options;
+  analyserNode: AnalyserNode | null,
+  isRecording: boolean,
+): React.MutableRefObject<number> {
+  const silenceMsRef = useRef(0);
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
-  const [isSilent, setIsSilent] = useState(false);
-  const [silenceTriggered, setSilenceTriggered] = useState(false);
-  const [speechDetected, setSpeechDetected] = useState(false);
-
-  const silenceStartRef = useRef<number | null>(null);
-  const wasSilentRef = useRef(false);
-  const hasTriggeredRef = useRef(false);
-  const speechDetectedRef = useRef(false);
-
-  // Sync refs via effects (React 19 purity rules)
-  const frequencyDataRef = useRef(frequencyData);
   useEffect(() => {
-    frequencyDataRef.current = frequencyData;
-  }, [frequencyData]);
-
-  const thresholdRef = useRef(threshold);
-  useEffect(() => {
-    thresholdRef.current = threshold;
-  }, [threshold]);
-
-  const silenceDurationRef = useRef(silenceDurationMs);
-  useEffect(() => {
-    silenceDurationRef.current = silenceDurationMs;
-  }, [silenceDurationMs]);
-
-  // Polling interval — runs only when enabled
-  useEffect(() => {
-    if (!enabled) {
-      // Reset refs when disabled; state resets happen in the cleanup or next enable cycle
-      silenceStartRef.current = null;
-      wasSilentRef.current = false;
-      hasTriggeredRef.current = false;
+    if (!isRecording || !analyserNode) {
+      silenceMsRef.current = 0;
       return;
     }
 
-    const intervalId = setInterval(() => {
-      const data = frequencyDataRef.current;
-      const avg =
-        data.length > 0
-          ? data.reduce((sum, v) => sum + v, 0) / data.length
-          : 0;
+    const bufferLength = analyserNode.frequencyBinCount;
+    if (!dataArrayRef.current || dataArrayRef.current.length !== bufferLength) {
+      dataArrayRef.current = new Uint8Array(bufferLength);
+    }
 
-      const currentlySilent = avg < thresholdRef.current;
+    const interval = setInterval(() => {
+      const data = dataArrayRef.current!;
+      analyserNode.getByteFrequencyData(data);
 
-      if (!currentlySilent && !speechDetectedRef.current) {
-        speechDetectedRef.current = true;
-        setSpeechDetected(true);
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sum += data[i];
       }
+      const avg = sum / bufferLength;
 
-      if (currentlySilent !== wasSilentRef.current) {
-        wasSilentRef.current = currentlySilent;
-        setIsSilent(currentlySilent);
-
-        if (currentlySilent) {
-          silenceStartRef.current = Date.now();
-          hasTriggeredRef.current = false;
-        } else {
-          silenceStartRef.current = null;
-        }
+      if (avg < SILENCE_THRESHOLD) {
+        silenceMsRef.current += POLL_INTERVAL_MS;
+      } else {
+        silenceMsRef.current = 0;
       }
+    }, POLL_INTERVAL_MS);
 
-      if (
-        currentlySilent &&
-        silenceStartRef.current !== null &&
-        !hasTriggeredRef.current
-      ) {
-        const elapsed = Date.now() - silenceStartRef.current;
-        if (elapsed >= silenceDurationRef.current) {
-          hasTriggeredRef.current = true;
-          setSilenceTriggered(true);
-        }
-      }
-    }, 200);
+    return () => {
+      clearInterval(interval);
+      silenceMsRef.current = 0;
+    };
+  }, [analyserNode, isRecording]);
 
-    return () => clearInterval(intervalId);
-  }, [enabled]);
-
-  const resetTrigger = useCallback(() => {
-    setSilenceTriggered(false);
-    hasTriggeredRef.current = false;
-    silenceStartRef.current = null;
-    wasSilentRef.current = false;
-  }, []);
-
-  return { isSilent, silenceTriggered, speechDetected, resetTrigger };
+  return silenceMsRef;
 }
