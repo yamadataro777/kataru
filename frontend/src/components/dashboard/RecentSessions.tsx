@@ -71,12 +71,6 @@ export default function RecentSessions({ sessions, conversations = [] }: RecentS
         <span className="text-[9px] tracking-[3px] uppercase text-neon-cyan opacity-80">
           RECENT SESSIONS
         </span>
-        <button
-          onClick={() => router.push('/history')}
-          className="text-[9px] tracking-[1px] text-hud-white-dim bg-transparent border-0 cursor-pointer hover:text-neon-cyan transition-colors"
-        >
-          VIEW ALL
-        </button>
       </div>
       <div className="flex flex-col">
         {items.map((item) => {

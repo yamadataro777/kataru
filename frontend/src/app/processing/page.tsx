@@ -194,7 +194,7 @@ export default function ProcessingPage() {
             )}
             {sessionId && steps[2].status === 'done' && (
               <button
-                onClick={() => router.push('/history')}
+                onClick={() => router.push('/')}
                 className="text-xs text-neon-lime tracking-[2px] bg-transparent border border-[rgba(168,255,0,0.3)] rounded px-4 py-2.5 cursor-pointer"
               >
                 保存済み — 後で生成
