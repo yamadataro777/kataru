@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import CircularEqualizer from '@/components/recording/CircularEqualizer';
+import SilenceGauge from '@/components/recording/SilenceGauge';
 import RecordTimer from '@/components/recording/RecordTimer';
 import RecordControls from '@/components/recording/RecordControls';
 import StimulusPrompt from '@/components/recording/StimulusPrompt';
@@ -24,7 +25,7 @@ export default function RecordPage() {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   // Adaptive intervention — nudges (4-7s) + questions (7s+) with context-aware selection
-  const { activeQuestion, questionPhase, interventionType } = useAdaptiveIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
+  const { activeQuestion, questionPhase, interventionType, silenceProgress } = useAdaptiveIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
 
   // Haptic feedback on new question
   useEffect(() => {
@@ -113,11 +114,14 @@ export default function RecordPage() {
 
         {/* Equalizer + Timer + Question */}
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
-          <CircularEqualizer
-            frequencyData={frequencyData}
-            size={240}
-            rotationDeg={rotationDeg}
-          />
+          <div className="relative" style={{ width: 240, height: 240 }}>
+            <CircularEqualizer
+              frequencyData={frequencyData}
+              size={240}
+              rotationDeg={rotationDeg}
+            />
+            <SilenceGauge progress={silenceProgress} size={240} />
+          </div>
 
           <RecordTimer seconds={duration} />
 

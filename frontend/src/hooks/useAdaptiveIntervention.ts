@@ -29,6 +29,7 @@ interface UseAdaptiveInterventionReturn {
   activeQuestion: string | null;
   questionPhase: 'typing' | 'hold' | null;
   interventionType: InterventionType;
+  silenceProgress: number;
 }
 
 export default function useAdaptiveIntervention(
@@ -43,6 +44,7 @@ export default function useAdaptiveIntervention(
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
   const [questionPhase, setQuestionPhase] = useState<'typing' | 'hold' | null>(null);
   const [interventionType, setInterventionType] = useState<InterventionType>(null);
+  const [silenceProgress, setSilenceProgress] = useState(0);
 
   const usedIdsRef = useRef<Set<string>>(new Set());
   const usedCategoriesRef = useRef<string[]>([]);
@@ -121,6 +123,27 @@ export default function useAdaptiveIntervention(
     const phase = getPhase(duration);
     generateAIQuestion(transcript, phase);
   }, [transcript, isRecording, duration, generateAIQuestion]);
+
+  // Silence progress for gauge (200ms polling)
+  useEffect(() => {
+    if (!isRecording) {
+      setSilenceProgress(0);
+      return;
+    }
+    const id = setInterval(() => {
+      const warmupDone = duration >= SESSION_WARMUP_SEC;
+      const underMax = interventionCountRef.current < MAX_INTERVENTIONS;
+      const cooldownDone = (duration - lastInterventionTimeRef.current) >= COOLDOWN_SEC;
+
+      if (!warmupDone || !underMax || !cooldownDone) {
+        setSilenceProgress(0);
+        return;
+      }
+      const p = Math.min(silenceMsRef.current / QUESTION_THRESHOLD_MS, 1);
+      setSilenceProgress(p);
+    }, 200);
+    return () => clearInterval(id);
+  }, [isRecording, duration, silenceMsRef]);
 
   // Main silence check — runs on every duration tick (1s)
   useEffect(() => {
@@ -229,5 +252,5 @@ export default function useAdaptiveIntervention(
     }
   }, [duration, isRecording, silenceMsRef, transcript]);
 
-  return { activeQuestion, questionPhase, interventionType };
+  return { activeQuestion, questionPhase, interventionType, silenceProgress };
 }
