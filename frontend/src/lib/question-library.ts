@@ -11,72 +11,61 @@ export interface Question {
 }
 
 export type QuestionCategory =
-  | 'diverge_converge'
-  | 'emotion'
-  | 'priority'
-  | 'summary'
-  | 'root_cause'
-  | 'next_step'
-  | 'contradiction'
-  | 'topic_connect';
+  | 'restart'
+  | 'expand'
+  | 'compress'
+  | 'shift'
+  | 'deepen'
+  | 'land';
 
 export type Phase = 'expansion' | 'connection' | 'confrontation';
 
 const questions: Question[] = [
-  // === diverge_converge (旧 deepening) ===
-  { id: 'd1', category: 'diverge_converge', text: '他には？', trigger_types: ['silence', 'stagnation'], depth_level: 1, timing: 'early', interruptiveness: 'low' },
-  { id: 'd2', category: 'diverge_converge', text: 'もう少し続けると？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
-  { id: 'd3', category: 'diverge_converge', text: 'それって、いつから感じてる？', trigger_types: ['silence', 'stagnation'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'd4', category: 'diverge_converge', text: '今、頭の中でいちばん輪郭がないものは？', trigger_types: ['silence'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  // === restart（再始動）===
+  { id: 'rt1', category: 'restart', text: '他には？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  { id: 'rt2', category: 'restart', text: '続けて', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  { id: 'rt3', category: 'restart', text: 'で？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  { id: 'rt4', category: 'restart', text: '一番気になるのは？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  { id: 'rt5', category: 'restart', text: '何が引っかかってる？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  { id: 'rt6', category: 'restart', text: '違う話でもいいよ', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
 
-  // === emotion ===
-  { id: 'e1', category: 'emotion', text: 'その話、体のどこで感じてる？', trigger_types: ['silence'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'e2', category: 'emotion', text: 'いま話していて、意外だったことは？', trigger_types: ['silence', 'stagnation'], depth_level: 1, timing: 'early', interruptiveness: 'low' },
-  { id: 'e3', category: 'emotion', text: 'その感情に名前をつけるとしたら？', trigger_types: ['silence'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'e4', category: 'emotion', text: '今の気持ちを色で表すと？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
-  { id: 'e5', category: 'emotion', text: 'いま一番強い感情は何？', trigger_types: ['silence', 'stagnation'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  // === expand（拡張）===
+  { id: 'ex1', category: 'expand', text: 'もう少し続けると？', trigger_types: ['silence'], depth_level: 1, timing: 'early', interruptiveness: 'low' },
+  { id: 'ex2', category: 'expand', text: 'まだ言ってないことは？', trigger_types: ['silence'], depth_level: 1, timing: 'early', interruptiveness: 'low' },
+  { id: 'ex3', category: 'expand', text: '他に関係してることは？', trigger_types: ['silence'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'ex4', category: 'expand', text: '具体的には？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  { id: 'ex5', category: 'expand', text: '例えば？', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
 
-  // === priority ===
-  { id: 'p1', category: 'priority', text: '一番大事なのはどれ？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'p2', category: 'priority', text: 'それを決めなくていいとしたら、どうする？', trigger_types: ['silence'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'p3', category: 'priority', text: '今日の話で、一つだけ残すとしたら？', trigger_types: ['silence', 'long_talk'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
-  { id: 'p4', category: 'priority', text: '明日の自分に伝えたいことは？', trigger_types: ['silence'], depth_level: 1, timing: 'late', interruptiveness: 'low' },
-  { id: 'p5', category: 'priority', text: 'いま一番重いのは、優先順位？それとも不安？', trigger_types: ['silence', 'stagnation'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'p6', category: 'priority', text: '問題を1つに絞るならどれ？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'mid', interruptiveness: 'medium' },
+  // === compress（圧縮）===
+  { id: 'cm1', category: 'compress', text: '一言で言うと？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'cm2', category: 'compress', text: '一番大事なのは？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'cm3', category: 'compress', text: '要するに？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'cm4', category: 'compress', text: '3つに絞ると？', trigger_types: ['silence', 'long_talk'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'cm5', category: 'compress', text: '結局どうしたい？', trigger_types: ['silence', 'long_talk'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
+  { id: 'cm6', category: 'compress', text: '今日の結論は？', trigger_types: ['silence', 'long_talk'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
+  { id: 'cm7', category: 'compress', text: '問題は1つ？複数？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'mid', interruptiveness: 'medium' },
 
-  // === summary ===
-  { id: 's1', category: 'summary', text: 'ここまでを一言で言うと？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'mid', interruptiveness: 'medium' },
-  { id: 's2', category: 'summary', text: '今の自分を一文で表すと？', trigger_types: ['silence'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
-  { id: 's3', category: 'summary', text: '今日のテーマは何だった？', trigger_types: ['silence'], depth_level: 1, timing: 'late', interruptiveness: 'low' },
-  { id: 's4', category: 'summary', text: 'この話のタイトルをつけるなら？', trigger_types: ['silence'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
+  // === shift（転換）===
+  { id: 'sh1', category: 'shift', text: '逆に言うと？', trigger_types: ['stagnation', 'topic_jump'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'sh2', category: 'shift', text: '別の見方をすると？', trigger_types: ['stagnation', 'topic_jump'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'sh3', category: 'shift', text: '誰の目線で話してる？', trigger_types: ['stagnation', 'topic_jump'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'sh4', category: 'shift', text: '本当にそう？', trigger_types: ['stagnation'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'sh5', category: 'shift', text: '避けてることは？', trigger_types: ['stagnation'], depth_level: 3, timing: 'late', interruptiveness: 'high' },
+  { id: 'sh6', category: 'shift', text: 'さっきの話と繋がる？', trigger_types: ['topic_jump'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
 
-  // === root_cause (旧 causality) ===
-  { id: 'c1', category: 'root_cause', text: 'それは事実・解釈・感情のどれに近い？', trigger_types: ['silence', 'stagnation'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'c2', category: 'root_cause', text: 'その原因って、本当にそれだけ？', trigger_types: ['silence'], depth_level: 3, timing: 'mid', interruptiveness: 'high' },
-  { id: 'c3', category: 'root_cause', text: 'もしそれがなかったら、何が変わってた？', trigger_types: ['silence'], depth_level: 2, timing: 'any', interruptiveness: 'medium' },
-  { id: 'c4', category: 'root_cause', text: 'この話を誰にもしなかったら、何が変わる？', trigger_types: ['silence'], depth_level: 3, timing: 'late', interruptiveness: 'high' },
+  // === deepen（深掘り）===
+  { id: 'dp1', category: 'deepen', text: 'なんでそう思う？', trigger_types: ['stagnation'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'dp2', category: 'deepen', text: 'それって前提は何？', trigger_types: ['stagnation'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'dp3', category: 'deepen', text: '事実？解釈？', trigger_types: ['stagnation'], depth_level: 2, timing: 'any', interruptiveness: 'medium' },
+  { id: 'dp4', category: 'deepen', text: '本当の問題は？', trigger_types: ['stagnation'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
+  { id: 'dp5', category: 'deepen', text: 'その原因だけ？', trigger_types: ['stagnation'], depth_level: 3, timing: 'late', interruptiveness: 'high' },
 
-  // === next_step (旧 action) ===
-  { id: 'a1', category: 'next_step', text: '次にできる小さな一歩は？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'late', interruptiveness: 'low' },
-  { id: 'a2', category: 'next_step', text: '理想の状態を10点としたら、今は何点？', trigger_types: ['silence'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'a3', category: 'next_step', text: '何があれば前に進める？', trigger_types: ['silence', 'stagnation'], depth_level: 1, timing: 'late', interruptiveness: 'low' },
-  { id: 'a4', category: 'next_step', text: '1週間後、どうなっていたい？', trigger_types: ['silence'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
-
-  // === contradiction (旧 perspective) ===
-  { id: 'v1', category: 'contradiction', text: '反対のことを言うなら？', trigger_types: ['silence', 'stagnation'], depth_level: 3, timing: 'mid', interruptiveness: 'high' },
-  { id: 'v2', category: 'contradiction', text: '本音と建前で分けると？', trigger_types: ['silence'], depth_level: 3, timing: 'mid', interruptiveness: 'high' },
-  { id: 'v3', category: 'contradiction', text: 'その声は誰の価値観っぽい？', trigger_types: ['silence'], depth_level: 3, timing: 'late', interruptiveness: 'high' },
-  { id: 'v4', category: 'contradiction', text: '今の自分に、半年前の自分は何て言う？', trigger_types: ['silence'], depth_level: 3, timing: 'late', interruptiveness: 'high' },
-
-  // === topic_connect (旧 structure) ===
-  { id: 'r1', category: 'topic_connect', text: '比喩で言うとどんな感じ？', trigger_types: ['silence'], depth_level: 2, timing: 'any', interruptiveness: 'medium' },
-  { id: 'r2', category: 'topic_connect', text: 'いま少し避けた話題は？', trigger_types: ['silence'], depth_level: 3, timing: 'mid', interruptiveness: 'high' },
-  { id: 'r3', category: 'topic_connect', text: '今の話と最初の話、繋がってる？', trigger_types: ['silence', 'topic_jump'], depth_level: 2, timing: 'mid', interruptiveness: 'medium' },
-  { id: 'r4', category: 'topic_connect', text: 'もう一つの視点から見ると？', trigger_types: ['silence', 'topic_jump'], depth_level: 2, timing: 'any', interruptiveness: 'medium' },
-
-  // === stuck (depth:1, for long silence) ===
-  { id: 'st1', category: 'diverge_converge', text: '今、頭に浮かんでいることをそのまま', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
-  { id: 'st2', category: 'diverge_converge', text: '違う話題でもいいよ', trigger_types: ['silence'], depth_level: 1, timing: 'any', interruptiveness: 'low' },
+  // === land（着地）===
+  { id: 'ln1', category: 'land', text: 'で、どうする？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'late', interruptiveness: 'low' },
+  { id: 'ln2', category: 'land', text: '明日何する？', trigger_types: ['silence', 'long_talk'], depth_level: 1, timing: 'late', interruptiveness: 'low' },
+  { id: 'ln3', category: 'land', text: '最初の一手は？', trigger_types: ['silence', 'long_talk'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
+  { id: 'ln4', category: 'land', text: '何があれば動ける？', trigger_types: ['silence', 'long_talk'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
+  { id: 'ln5', category: 'land', text: '誰に相談する？', trigger_types: ['silence', 'long_talk'], depth_level: 2, timing: 'late', interruptiveness: 'medium' },
 ];
 
 // === Emotional acceptance nudges ===
@@ -84,6 +73,8 @@ const emotionalNudges = [
   'そうだよね',
   'それ、大事な話だね',
   'もう少し聞かせて',
+  'うん、続けて',
+  'それで？',
 ];
 
 // === Emotion word dictionary for frontend-only detection ===
@@ -184,39 +175,37 @@ export function scoreCategories(
   recentCategories: string[],
 ): Record<QuestionCategory, number> {
   const scores: Record<QuestionCategory, number> = {
-    diverge_converge: 40,
-    emotion: 20,
-    priority: 15,
-    summary: 10,
-    root_cause: 15,
-    next_step: 10,
-    contradiction: 15,
-    topic_connect: 15,
+    restart: 30,
+    expand: 30,
+    compress: 15,
+    shift: 15,
+    deepen: 15,
+    land: 10,
   };
 
   if (phase === 'expansion') {
-    scores.diverge_converge += 30;
-    scores.emotion += 10;
+    scores.restart += 20;
+    scores.expand += 30;
   } else if (phase === 'connection') {
-    scores.topic_connect += 30;
-    scores.root_cause += 20;
-    scores.contradiction += 10;
+    scores.compress += 30;
+    scores.shift += 20;
+    scores.deepen += 15;
   } else {
-    scores.contradiction += 30;
-    scores.root_cause += 20;
-    scores.priority += 20;
-    scores.summary += 15;
+    scores.compress += 20;
+    scores.land += 30;
+    scores.shift += 10;
   }
 
   if (informationDensity === 'low') {
-    scores.diverge_converge += 20;
+    scores.restart += 20;
+    scores.expand += 10;
   }
   if (informationDensity === 'high') {
-    scores.summary += 20;
-    scores.priority += 15;
+    scores.compress += 20;
+    scores.land += 10;
   }
   if (topicCount >= 3) {
-    scores.topic_connect += 15;
+    scores.shift += 15;
   }
 
   const recent = recentCategories.slice(-2);
@@ -312,7 +301,7 @@ export function selectDifferentQuestion(
   ctx: SelectContext,
   excludeCategory: QuestionCategory,
 ): Question | null {
-  let pool = questions.filter((q) => !ctx.usedIds.has(q.id) && q.category !== excludeCategory);
+  const pool = questions.filter((q) => !ctx.usedIds.has(q.id) && q.category !== excludeCategory);
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)];
 }

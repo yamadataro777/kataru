@@ -17,11 +17,11 @@ import {
 } from '@/lib/question-library';
 import { fetchBrainDumpQuestion } from '@/lib/api';
 
-const QUESTION_THRESHOLD_MS = 6000;
+const QUESTION_THRESHOLD_MS = 4000;
 const STAGNATION_SILENCE_MS = 3000;
 const LONG_TALK_THRESHOLD_SEC = 120;
 const COOLDOWN_SEC = 50;
-const SESSION_WARMUP_SEC = 45;
+const SESSION_WARMUP_SEC = 0;
 const MAX_INTERVENTIONS = 2;
 const AI_QUESTION_MIN_CHARS = 300;
 const AI_QUESTION_DELTA_CHARS = 200;
