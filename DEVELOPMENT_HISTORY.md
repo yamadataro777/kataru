@@ -1,5 +1,52 @@
 # Kataru 開発の軌跡
 
+## 2026-03-10: 思考の交通整理アプリへの変革
+
+### 概要
+多機能レポート構造から「3分話せば、いま何が詰まりかと、次に何をやるかが見える」対話体験への変革。
+
+### 変更内容
+
+**Step 1: データ層**
+- Report型に `blockage`, `discussion_points`, `next_step` の3フィールド追加（frontend/backend両方）
+- Geminiプロンプト（Free/Paid両方）に3カード構造の出力ルール追加
+
+**Step 2: 質問ライブラリ改修**
+- Question interfaceを拡張（trigger_types, depth_level, interruptiveness等）
+- カテゴリ再マッピング: deepening→diverge_converge, causality→root_cause, action→next_step, perspective→contradiction, structure→topic_connect
+- `detectStagnation()` 停滞語検知関数を追加
+- `selectQuestionByTrigger()`, `selectDifferentQuestion()` を追加
+- nudge関連コード（selectNudge）を削除
+
+**Step 3: 質問介入ロジック改修**
+- タイミング定数変更: SESSION_WARMUP 15→45秒, COOLDOWN 25→50秒, MAX_INTERVENTIONS 10→2
+- 4トリガー実装: 沈黙(6s+), 停滞語(3s+沈黙), 長話(120s+連続発話), トピックジャンプ
+- nudge廃止、silenceMessage（「考え中でも大丈夫」）に置換
+- QuestionTrayコールバック（onContinue/onLater/onDifferent）追加
+- 15秒自動dismiss
+
+**Step 4: Session録音UI改修**
+- StimulusPrompt → QuestionTray化（ボトムドロワー + 3ボタン）
+- silenceMessage表示追加、プライバシーアイコン追加
+
+**Step 5: Results画面の再構築**
+- 3カード構造（今の詰まり/論点/次の一歩）+ 4アクションボタン
+- 「全文を見る」折りたたみで従来のレポートを表示
+- IncubationMessage, PastConclusion, UnlockBanner, textarea結論を削除
+- 削除機能（確認ダイアログ付き）追加
+
+**Step 6: Home画面の変革**
+- 巨大CTA「話し始める」に統一
+- 直近1セッションのインライン表示
+- プライバシーノート追加
+- Welcome/おかえり分岐、streak、RecentSessions、getConversations削除
+
+**Step 7: Archive/Search画面**
+- `/archive` 新規作成（検索 + 「次の一歩あり」フィルタ）
+- BottomNav: ANALYTICS → ARCHIVE に変更
+
+---
+
 > **プロジェクト名:** Kataru（語る）
 > **コンセプト:** 声で話すだけで、考えが整理される。音声×AIの思考整理アプリ。
 > **開発期間:** 2026年3月1日〜2日（約12時間の集中開発スプリント）

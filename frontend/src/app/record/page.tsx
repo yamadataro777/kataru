@@ -6,7 +6,7 @@ import CircularEqualizer from '@/components/recording/CircularEqualizer';
 import SilenceGauge from '@/components/recording/SilenceGauge';
 import RecordTimer from '@/components/recording/RecordTimer';
 import RecordControls from '@/components/recording/RecordControls';
-import StimulusPrompt from '@/components/recording/StimulusPrompt';
+import QuestionTray from '@/components/recording/StimulusPrompt';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
 import useTranscription from '@/hooks/useTranscription';
@@ -24,8 +24,7 @@ export default function RecordPage() {
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // Adaptive intervention — nudges (4-7s) + questions (7s+) with context-aware selection
-  const { activeQuestion, questionPhase, interventionType, silenceProgress } = useAdaptiveIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
+  const { activeQuestion, questionPhase, silenceProgress, silenceMessage, onContinue, onLater, onDifferent } = useAdaptiveIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
 
   // Haptic feedback on new question
   useEffect(() => {
@@ -103,16 +102,27 @@ export default function RecordPage() {
                 RECORDING
               </span>
             </div>
-            <button
-              onClick={() => router.push('/')}
-              className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer flex items-center gap-1"
-            >
-              <span>&larr;</span> BACK
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/privacy')}
+                className="text-hud-white-dim bg-transparent border-0 cursor-pointer opacity-40"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0110 0v4" />
+                </svg>
+              </button>
+              <button
+                onClick={() => router.push('/')}
+                className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer flex items-center gap-1"
+              >
+                <span>&larr;</span> BACK
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Equalizer + Timer + Question */}
+        {/* Equalizer + Timer + Silence Message */}
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <div className="relative" style={{ width: 240, height: 240 }}>
             <CircularEqualizer
@@ -125,11 +135,18 @@ export default function RecordPage() {
 
           <RecordTimer seconds={duration} />
 
-          <StimulusPrompt
-            question={activeQuestion}
-            phase={questionPhase}
-            isNudge={interventionType === 'nudge'}
-          />
+          {/* Silence message */}
+          {silenceMessage && !activeQuestion && (
+            <p
+              className="text-[11px] text-hud-white tracking-wide text-center"
+              style={{
+                opacity: 0.35,
+                animation: 'breath-fade 3s ease-in-out infinite',
+              }}
+            >
+              {silenceMessage}
+            </p>
+          )}
         </div>
 
         {/* Transcript */}
@@ -173,11 +190,20 @@ export default function RecordPage() {
         )}
 
         {/* Controls */}
-        <div className="pb-8 px-5">
+        <div className={`pb-8 px-5 ${activeQuestion ? 'mb-[120px]' : ''}`}>
           {!tooShortWarning && (
             <RecordControls onStop={handleStop} isRecording={isRecording} />
           )}
         </div>
+
+        {/* Question Tray */}
+        <QuestionTray
+          question={activeQuestion}
+          phase={questionPhase}
+          onContinue={onContinue}
+          onLater={onLater}
+          onDifferent={onDifferent}
+        />
       </div>
     </AuthGuard>
   );

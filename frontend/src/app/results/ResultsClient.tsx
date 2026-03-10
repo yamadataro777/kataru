@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { getSession, getSessions, updateSession } from '@/lib/api';
+import { getSession, updateSession, deleteSession } from '@/lib/api';
 import { Session } from '@/types/session';
 import { useAuth } from '@/contexts/AuthContext';
-import { getSessionPhase, shouldShowFeedbackAfterResults } from '@/lib/session-tracker';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
 import KeyInsights from '@/components/report/KeyInsights';
@@ -21,26 +20,11 @@ export default function ResultsClient() {
   const { profile } = useAuth();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [conclusion, setConclusion] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [pastConclusion, setPastConclusion] = useState<{
-    topic: string;
-    conclusion: string;
-    date: string;
-    sessionId: string;
-  } | null>(null);
-
-  const plan = profile?.plan || 'free';
-  const freeSessionsUsed = profile?.free_sessions_used || 0;
-  const phase = getSessionPhase(freeSessionsUsed > 0 ? freeSessionsUsed - 1 : 0);
-  const showFeedback = shouldShowFeedbackAfterResults(plan, freeSessionsUsed);
-
-  const conclusionRef = useRef(conclusion);
-  conclusionRef.current = conclusion;
-
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
+  const [showFullReport, setShowFullReport] = useState(false);
+  const [savingStep, setSavingStep] = useState(false);
+  const [savedStep, setSavedStep] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     const id = searchParams.get('id');
@@ -50,48 +34,10 @@ export default function ResultsClient() {
     }
 
     getSession(id)
-      .then((s) => {
-        setSession(s);
-        setConclusion(s.user_conclusion || '');
-      })
+      .then((s) => setSession(s))
       .catch(() => setSession(null))
       .finally(() => setLoading(false));
   }, [searchParams]);
-
-  // Fetch past conclusion with matching topic (Step 4a)
-  useEffect(() => {
-    if (!session?.report?.topics) return;
-    getSessions().then(all => {
-      const past = all
-        .filter(s => s.id !== session.id && s.user_conclusion && s.status === 'completed')
-        .filter(s => s.report?.topics?.some(t => session.report!.topics.includes(t)))
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      if (past[0]) {
-        const sharedTopic = past[0].report!.topics.find(t => session.report!.topics.includes(t))!;
-        setPastConclusion({
-          topic: sharedTopic,
-          conclusion: past[0].user_conclusion!,
-          date: past[0].created_at,
-          sessionId: past[0].id,
-        });
-      }
-    }).catch(() => {});
-  }, [session]);
-
-  const handleSaveConclusion = async () => {
-    const s = sessionRef.current;
-    if (!s) return;
-    setSaving(true);
-    try {
-      await updateSession(s.id, { user_conclusion: conclusionRef.current || null });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      console.error('Failed to save conclusion:', e);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -116,13 +62,34 @@ export default function ResultsClient() {
   }
 
   const { report } = session;
-  const isPaidReport = !!report.action_items || !!report.contradictions;
 
-  const handleBack = () => {
-    if (showFeedback) {
-      router.push('/feedback');
-    } else {
+  // Fallback values for 3-card structure
+  const blockage = report.blockage || report.key_insights?.[0] || report.summary;
+  const discussionPoints = report.discussion_points || report.key_insights?.slice(0, 3) || [];
+  const nextStep = report.next_step || report.action_items?.[0] || null;
+
+  const handleSaveNextStep = async () => {
+    if (!nextStep) return;
+    setSavingStep(true);
+    try {
+      await updateSession(session.id, { user_conclusion: nextStep });
+      setSavedStep(true);
+      setTimeout(() => setSavedStep(false), 2000);
+    } catch (e) {
+      console.error('Failed to save next step:', e);
+    } finally {
+      setSavingStep(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteSession(session.id);
       router.push('/');
+    } catch (e) {
+      console.error('Failed to delete session:', e);
+      setDeleting(false);
     }
   };
 
@@ -131,272 +98,248 @@ export default function ResultsClient() {
       {/* Header */}
       <div className="px-5 py-4 flex-shrink-0">
         <button
-          onClick={handleBack}
+          onClick={() => router.push('/')}
           className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer mb-3 flex items-center gap-1"
         >
           <span>&larr;</span> BACK
         </button>
-        <span className="label">AIの見立て</span>
-        <h1
-          className="text-xl font-bold tracking-[2px] mt-2 text-hud-white"
-          style={{ animation: 'glitch-in 0.4s ease forwards' }}
-        >
-          {report.title}
-        </h1>
-        <div className="hud-line mt-3" />
+        <div className="hud-line mt-1" />
       </div>
 
-      {/* Unlock Banner */}
-      {isPaidReport && phase === 'full_preview' && (
-        <div
-          className="mx-5 mb-2 rounded-lg px-4 py-3 flex items-center gap-3"
-          style={{
-            background: 'linear-gradient(135deg, rgba(168,255,0,0.08), rgba(0,212,255,0.08))',
-            border: '1px solid rgba(168,255,0,0.3)',
-            boxShadow: '0 0 20px rgba(168,255,0,0.08)',
-            animation: 'glitch-in 0.6s ease forwards',
-          }}
-        >
-          <span
-            className="text-lg"
-            style={{ filter: 'drop-shadow(0 0 6px rgba(168,255,0,0.5))' }}
-          >
-            {'\u2606'}
-          </span>
-          <div className="flex-1">
-            <p
-              className="text-[10px] font-bold tracking-[2px] text-neon-lime"
-              style={{ textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
-            >
-              FULL REPORT UNLOCKED
-            </p>
-            <p className="text-[8px] text-hud-white-dim tracking-wide mt-0.5">
-              詳細レポートが解放されました。矛盾検出・アクション提案・思考パターン分析をご覧ください。
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Content */}
+      {/* 3-Card Structure */}
       <div className="flex flex-col gap-4 px-5 overflow-y-auto">
-        {/* Summary */}
-        <GlassCard className="p-4" variant="cyan">
-          <span className="label mb-2 block">SUMMARY</span>
-          <p className="text-sm leading-7 text-hud-white opacity-90 tracking-wide">
-            {report.summary}
+        {/* Card 1: 今の詰まり */}
+        <GlassCard className="p-4" variant="magenta">
+          <span
+            className="text-[9px] tracking-[3px] font-bold block mb-2"
+            style={{ color: 'var(--neon-magenta)', textShadow: '0 0 8px rgba(255,59,122,0.3)' }}
+          >
+            今の詰まり
+          </span>
+          <p className="text-sm leading-7 text-hud-white opacity-90 tracking-wide" style={{ fontFamily: 'sans-serif' }}>
+            {blockage}
           </p>
         </GlassCard>
 
-        {/* Topics */}
-        <div>
-          <span className="label mb-2 block">TOPICS</span>
-          <TopicTags topics={report.topics} />
+        {/* Card 2: 論点 */}
+        {discussionPoints.length > 0 && (
+          <GlassCard className="p-4" variant="cyan">
+            <span className="label mb-3 block">論点</span>
+            <div className="flex flex-col gap-2">
+              {discussionPoints.map((point, i) => (
+                <div key={i} className="flex gap-2 items-start">
+                  <span className="text-neon-cyan text-xs flex-shrink-0 font-mono">{i + 1}.</span>
+                  <p className="text-sm leading-6 text-hud-white opacity-85 tracking-wide" style={{ fontFamily: 'sans-serif' }}>
+                    {point}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+        )}
+
+        {/* Card 3: 次の一歩 */}
+        {nextStep && (
+          <GlassCard className="p-4" variant="lime">
+            <span
+              className="text-[9px] tracking-[3px] font-bold block mb-2"
+              style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
+            >
+              次の一歩
+            </span>
+            <p className="text-sm leading-7 text-hud-white opacity-90 tracking-wide" style={{ fontFamily: 'sans-serif' }}>
+              {nextStep}
+            </p>
+          </GlassCard>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex flex-col gap-3 mt-2">
+          {/* この一歩を残す */}
+          {nextStep && (
+            <button
+              onClick={handleSaveNextStep}
+              disabled={savingStep || savedStep}
+              className="w-full text-[11px] tracking-[2px] font-bold py-3 rounded-lg cursor-pointer transition-all disabled:opacity-50"
+              style={{
+                color: savedStep ? 'var(--neon-lime)' : 'var(--bg-dark)',
+                background: savedStep ? 'rgba(168,255,0,0.12)' : 'var(--neon-lime)',
+                border: `1px solid ${savedStep ? 'rgba(168,255,0,0.4)' : 'var(--neon-lime)'}`,
+                boxShadow: savedStep ? 'none' : '0 0 20px rgba(168,255,0,0.2)',
+              }}
+            >
+              {savingStep ? 'SAVING...' : savedStep ? 'SAVED' : 'この一歩を残す'}
+            </button>
+          )}
+
+          {/* 全文を見る */}
+          <button
+            onClick={() => setShowFullReport(!showFullReport)}
+            className="w-full text-[11px] tracking-[2px] font-bold py-3 rounded-lg cursor-pointer transition-all"
+            style={{
+              color: 'var(--neon-cyan)',
+              background: 'rgba(0,212,255,0.06)',
+              border: '1px solid rgba(0,212,255,0.25)',
+            }}
+          >
+            {showFullReport ? '閉じる' : '全文を見る'}
+          </button>
+
+          {/* 続きをあとで話す */}
+          <button
+            onClick={() => router.push('/')}
+            className="w-full text-[10px] tracking-[1px] py-2.5 rounded-lg cursor-pointer transition-all"
+            style={{
+              color: 'var(--hud-white-dim)',
+              background: 'transparent',
+              border: '1px solid rgba(232,237,245,0.1)',
+            }}
+          >
+            続きをあとで話す
+          </button>
+
+          {/* 削除 */}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="text-[9px] tracking-[1px] py-2 cursor-pointer bg-transparent border-0 mx-auto"
+            style={{ color: 'var(--neon-magenta)', opacity: 0.5 }}
+          >
+            削除
+          </button>
         </div>
 
-        {/* Key Insights */}
-        <KeyInsights insights={report.key_insights} />
+        {/* Full Report (collapsible) */}
+        {showFullReport && (
+          <div className="flex flex-col gap-4 mt-2" style={{ animation: 'glitch-in 0.3s ease forwards' }}>
+            <div className="hud-line" />
 
-        {/* Exploration Questions (free) */}
-        {report.exploration_questions && report.exploration_questions.length > 0 && (
-          <ExplorationQuestions questions={report.exploration_questions} />
-        )}
+            {/* Title */}
+            <h2 className="text-lg font-bold tracking-[2px] text-hud-white">
+              {report.title}
+            </h2>
 
-        {/* Deep Questions (paid / free trial) */}
-        {report.deep_questions && report.deep_questions.length > 0 && (
-          <DeepQuestions questions={report.deep_questions} />
-        )}
-
-        {/* Sentiment */}
-        <SentimentGauge
-          overall={report.sentiment.overall}
-          score={report.sentiment.score}
-          details={report.sentiment.details}
-        />
-
-        {/* Report Sections (paid only) */}
-        {report.structure?.sections?.map((section, i) => (
-          <ReportSection key={i} heading={section.heading} content={section.content} />
-        ))}
-
-        {/* Contradictions (paid only) */}
-        {report.contradictions && report.contradictions.length > 0 && (
-          <GlassCard className="p-4" variant="magenta">
-            <span className="label label-magenta mb-3 block">CONTRADICTIONS</span>
-            <div className="flex flex-col gap-2">
-              {report.contradictions.map((item, i) => (
-                <div key={i} className="flex gap-2 items-start">
-                  <span className="text-neon-magenta text-xs flex-shrink-0">&#9671;</span>
-                  <p className="text-sm leading-6 text-hud-white opacity-85 tracking-wide">
-                    {item}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
-        )}
-
-        {/* Thinking Pattern (paid only) */}
-        {report.thinking_pattern && (
-          <GlassCard className="p-4" variant="cyan">
-            <span className="label mb-2 block">THINKING PATTERN</span>
-            <p className="text-sm leading-7 text-hud-white opacity-90 tracking-wide">
-              {report.thinking_pattern}
-            </p>
-          </GlassCard>
-        )}
-
-        {/* Action Items (paid only) */}
-        {report.action_items && report.action_items.length > 0 && (
-          <GlassCard className="p-4" variant="magenta">
-            <span className="label label-magenta mb-3 block">ACTION ITEMS</span>
-            <div className="flex flex-col gap-2">
-              {report.action_items.map((item, i) => (
-                <div key={i} className="flex gap-2 items-start">
-                  <span className="text-neon-magenta text-xs flex-shrink-0">&#9656;</span>
-                  <p className="text-sm leading-6 text-hud-white opacity-85 tracking-wide">
-                    {item}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
-        )}
-
-        {/* Teaser for free users (session 2) - show what paid reports include */}
-        {!isPaidReport && phase === 'teaser' && (
-          <GlassCard className="p-4" variant="lime">
-            <span className="label mb-2 block" style={{ color: 'var(--neon-lime)' }}>UPGRADE PREVIEW</span>
-            <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-3">
-              有料プランでは以下の分析も利用できます:
-            </p>
-            <div className="flex flex-col gap-2">
-              {['矛盾点の検出', 'アクション提案', '思考パターン分析', '構造化された詳細レポート', '思考を深める問い'].map((item, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="text-neon-lime text-[9px]">&#10003;</span>
-                  <span className="text-[10px] text-hud-white opacity-60 tracking-wide">{item}</span>
-                </div>
-              ))}
-            </div>
-            <div
-              className="mt-3 rounded-md px-3 py-2 flex items-center gap-2"
-              style={{
-                background: 'rgba(168,255,0,0.04)',
-                border: '1px solid rgba(168,255,0,0.15)',
-              }}
-            >
-              <span className="text-neon-lime text-[10px]">{'\u25B6'}</span>
-              <span className="text-[9px] text-neon-lime tracking-[1px]">
-                次のセッションで詳細レポートが解放されます
-              </span>
-            </div>
-          </GlassCard>
-        )}
-
-        {/* Past Conclusion - Step 4a */}
-        {pastConclusion && (
-          <GlassCard className="p-4">
-            <span className="label mb-3 block">前回の思考</span>
-            <p className="text-xs leading-6 text-hud-white-dim tracking-wide mb-2" style={{ fontFamily: 'sans-serif' }}>
-              「{pastConclusion.topic}」について、
-              {Math.floor((Date.now() - new Date(pastConclusion.date).getTime()) / 86400000)}日前にあなたはこう結論しました:
-            </p>
-            <div
-              className="rounded-md px-3 py-2.5 mb-3"
-              style={{
-                background: 'rgba(232,237,245,0.04)',
-                border: '1px solid rgba(232,237,245,0.12)',
-              }}
-            >
-              <p className="text-sm leading-7 text-hud-white opacity-85 tracking-wide" style={{ fontFamily: 'sans-serif' }}>
-                「{pastConclusion.conclusion}」
-              </p>
-            </div>
-            <p className="text-xs text-neon-cyan tracking-wide" style={{ fontFamily: 'sans-serif' }}>
-              今回も同じ結論ですか？ それとも、何か変わりましたか？
-            </p>
-          </GlassCard>
-        )}
-
-        {/* Incubation Message - Step 3a */}
-        {(() => {
-          if (session.user_conclusion) return null;
-          const daysElapsed = Math.floor((Date.now() - new Date(session.created_at).getTime()) / 86400000);
-          if (daysElapsed >= 3) {
-            return (
-              <GlassCard className="p-4" variant="lime">
-                <span className="text-[9px] tracking-[3px] font-bold block mb-2" style={{ color: 'var(--neon-lime)' }}>INCUBATION</span>
-                <p className="text-xs leading-6 tracking-wide" style={{ color: 'var(--neon-lime)', fontFamily: 'sans-serif' }}>
-                  十分な時間が経ちました。今のあなたなら、より本質的な結論が書けるはずです。
-                </p>
-              </GlassCard>
-            );
-          }
-          if (daysElapsed >= 1) {
-            return (
-              <GlassCard className="p-4" variant="cyan">
-                <span className="label mb-2 block">INCUBATION</span>
-                <p className="text-xs leading-6 text-neon-cyan tracking-wide" style={{ fontFamily: 'sans-serif' }}>
-                  {daysElapsed}日が経ちました。最初の印象とは違う見方が芽生えていませんか？
-                </p>
-              </GlassCard>
-            );
-          }
-          return (
+            {/* Summary */}
             <GlassCard className="p-4" variant="cyan">
-              <span className="label mb-2 block">INCUBATION</span>
-              <p className="text-xs leading-6 text-neon-cyan tracking-wide" style={{ fontFamily: 'sans-serif' }}>
-                まだ記憶が新しいうちです。少し寝かせてから、改めて結論を書いてみませんか？
+              <span className="label mb-2 block">SUMMARY</span>
+              <p className="text-sm leading-7 text-hud-white opacity-90 tracking-wide">
+                {report.summary}
               </p>
             </GlassCard>
-          );
-        })()}
 
-        {/* Your Conclusion */}
-        <GlassCard className="p-4" variant="lime">
-          <span
-            className="text-[9px] tracking-[3px] font-bold block mb-3"
-            style={{ color: 'var(--neon-lime)', textShadow: '0 0 8px rgba(168,255,0,0.3)' }}
-          >
-            あなたの結論
-          </span>
-          <textarea
-            value={conclusion}
-            onChange={(e) => {
-              setConclusion(e.target.value);
-              setSaved(false);
-            }}
-            placeholder="結局、自分はどう思う？"
-            rows={4}
-            className="w-full bg-transparent text-sm leading-7 text-hud-white tracking-wide resize-none outline-none placeholder:text-hud-white-dim placeholder:opacity-40"
-            style={{
-              border: 'none',
-              borderBottom: '1px solid rgba(168,255,0,0.15)',
-              paddingBottom: '8px',
-            }}
-          />
-          <div className="flex justify-end mt-3">
-            <button
-              onClick={handleSaveConclusion}
-              disabled={saving || saved}
-              className="text-[9px] tracking-[2px] font-bold px-4 py-2 rounded cursor-pointer transition-all disabled:opacity-50"
-              style={{
-                color: saved ? 'var(--neon-lime)' : 'var(--hud-white)',
-                background: saved ? 'rgba(168,255,0,0.12)' : 'rgba(168,255,0,0.06)',
-                border: `1px solid ${saved ? 'rgba(168,255,0,0.4)' : 'rgba(168,255,0,0.2)'}`,
-              }}
-            >
-              {saving ? 'SAVING...' : saved ? 'SAVED' : '保存する'}
-            </button>
+            {/* Topics */}
+            <div>
+              <span className="label mb-2 block">TOPICS</span>
+              <TopicTags topics={report.topics} />
+            </div>
+
+            {/* Key Insights */}
+            <KeyInsights insights={report.key_insights} />
+
+            {/* Exploration Questions */}
+            {report.exploration_questions && report.exploration_questions.length > 0 && (
+              <ExplorationQuestions questions={report.exploration_questions} />
+            )}
+
+            {/* Deep Questions */}
+            {report.deep_questions && report.deep_questions.length > 0 && (
+              <DeepQuestions questions={report.deep_questions} />
+            )}
+
+            {/* Sentiment */}
+            <SentimentGauge
+              overall={report.sentiment.overall}
+              score={report.sentiment.score}
+              details={report.sentiment.details}
+            />
+
+            {/* Report Sections */}
+            {report.structure?.sections?.map((section, i) => (
+              <ReportSection key={i} heading={section.heading} content={section.content} />
+            ))}
+
+            {/* Contradictions */}
+            {report.contradictions && report.contradictions.length > 0 && (
+              <GlassCard className="p-4" variant="magenta">
+                <span className="label label-magenta mb-3 block">CONTRADICTIONS</span>
+                <div className="flex flex-col gap-2">
+                  {report.contradictions.map((item, i) => (
+                    <div key={i} className="flex gap-2 items-start">
+                      <span className="text-neon-magenta text-xs flex-shrink-0">&#9671;</span>
+                      <p className="text-sm leading-6 text-hud-white opacity-85 tracking-wide">
+                        {item}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            )}
+
+            {/* Thinking Pattern */}
+            {report.thinking_pattern && (
+              <GlassCard className="p-4" variant="cyan">
+                <span className="label mb-2 block">THINKING PATTERN</span>
+                <p className="text-sm leading-7 text-hud-white opacity-90 tracking-wide">
+                  {report.thinking_pattern}
+                </p>
+              </GlassCard>
+            )}
+
+            {/* Action Items */}
+            {report.action_items && report.action_items.length > 0 && (
+              <GlassCard className="p-4" variant="magenta">
+                <span className="label label-magenta mb-3 block">ACTION ITEMS</span>
+                <div className="flex flex-col gap-2">
+                  {report.action_items.map((item, i) => (
+                    <div key={i} className="flex gap-2 items-start">
+                      <span className="text-neon-magenta text-xs flex-shrink-0">&#9656;</span>
+                      <p className="text-sm leading-6 text-hud-white opacity-85 tracking-wide">
+                        {item}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            )}
           </div>
-        </GlassCard>
-
-        {/* Back button */}
-        <div className="mt-4 flex justify-center">
-          <NeonButton onClick={handleBack}>
-            {showFeedback ? '次へ' : 'ホームに戻る'}
-          </NeonButton>
-        </div>
+        )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,14,26,0.9)]">
+          <GlassCard className="mx-8 max-w-sm p-6" variant="magenta">
+            <h3
+              className="text-sm font-bold tracking-[2px] mb-3"
+              style={{ color: 'var(--neon-magenta)' }}
+            >
+              セッションを削除
+            </h3>
+            <p className="text-xs leading-6 text-hud-white opacity-70 tracking-wide mb-4">
+              この操作は取り消せません。本当に削除しますか？
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 text-[10px] tracking-[2px] text-hud-white-dim bg-transparent border border-[rgba(232,237,245,0.15)] rounded py-2 cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 text-[10px] tracking-[2px] font-bold rounded py-2 cursor-pointer disabled:opacity-50"
+                style={{
+                  color: 'var(--bg-dark)',
+                  background: 'var(--neon-magenta)',
+                  border: '1px solid var(--neon-magenta)',
+                }}
+              >
+                {deleting ? '削除中...' : '削除する'}
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
     </div>
   );
 }

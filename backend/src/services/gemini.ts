@@ -38,6 +38,9 @@ export interface Report {
     context: string;
     angle: string;
   }>;
+  blockage?: string;
+  discussion_points?: string[];
+  next_step?: string;
 }
 
 export async function generateReport(transcript: string, plan: 'free' | 'paid' = 'free', freeSessionsUsed: number = 0): Promise<Report> {
