@@ -23,8 +23,8 @@ export default function RecordPage() {
   const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // Silence-based question intervention — triggers when user stops speaking (transcript stops updating)
-  const { activeQuestion, questionPhase } = useQuestionIntervention(transcript, interimTranscript, isRecording, duration);
+  // Silence-based question intervention — transcript mode (browser) or audio fallback (iOS)
+  const { activeQuestion, questionPhase } = useQuestionIntervention(transcript, interimTranscript, isRecording, duration, analyserNode);
 
   // Haptic feedback on new question
   useEffect(() => {

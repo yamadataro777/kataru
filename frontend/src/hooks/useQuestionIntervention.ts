@@ -6,7 +6,7 @@ import { selectQuestion } from '@/lib/question-library';
 
 const SILENCE_TRIGGER_MS = 7000;
 const COOLDOWN_SEC = 30;
-const SESSION_WARMUP_SEC = 60;
+const SESSION_WARMUP_SEC = 15;
 const MAX_INTERVENTIONS = 8;
 
 interface UseQuestionInterventionReturn {
@@ -19,8 +19,9 @@ export default function useQuestionIntervention(
   interimTranscript: string,
   isRecording: boolean,
   duration: number,
+  analyserNode: AnalyserNode | null,
 ): UseQuestionInterventionReturn {
-  const silenceMsRef = useSilenceDetector(transcript, interimTranscript, isRecording);
+  const silenceMsRef = useSilenceDetector(transcript, interimTranscript, isRecording, analyserNode);
 
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
   const [questionPhase, setQuestionPhase] = useState<'typing' | 'hold' | null>(null);
