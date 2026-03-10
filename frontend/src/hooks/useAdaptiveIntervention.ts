@@ -49,9 +49,10 @@ export default function useAdaptiveIntervention(
   const usedIdsRef = useRef<Set<string>>(new Set());
   const usedCategoriesRef = useRef<string[]>([]);
   const interventionCountRef = useRef(0);
-  const lastInterventionTimeRef = useRef(0);
+  const lastInterventionTimeRef = useRef(-COOLDOWN_SEC);
   const firedRef = useRef(false);
   const nudgeFiredRef = useRef(false);
+  const hasActiveRef = useRef(false);
 
   // AI question cache
   const aiQuestionRef = useRef<string | null>(null);
@@ -76,6 +77,7 @@ export default function useAdaptiveIntervention(
       lastInterventionTimeRef.current = 0;
       firedRef.current = false;
       nudgeFiredRef.current = false;
+      hasActiveRef.current = false;
       aiQuestionRef.current = null;
       aiGeneratingRef.current = false;
       lastAITranscriptLenRef.current = 0;
@@ -153,10 +155,16 @@ export default function useAdaptiveIntervention(
 
     const silenceMs = silenceMsRef.current;
 
-    // Flow state — reset fired flags
+    // Flow state — user is speaking, reset fired flags and clear displayed question
     if (silenceMs < NUDGE_THRESHOLD_MS) {
       firedRef.current = false;
       nudgeFiredRef.current = false;
+      if (hasActiveRef.current) {
+        hasActiveRef.current = false;
+        setActiveQuestion(null);
+        setQuestionPhase(null);
+        setInterventionType(null);
+      }
       return;
     }
 
@@ -174,6 +182,7 @@ export default function useAdaptiveIntervention(
         ? selectEmotionalNudge()
         : selectNudge();
 
+      hasActiveRef.current = true;
       setActiveQuestion(text);
       setQuestionPhase('hold'); // No typing animation for nudges
       setInterventionType('nudge');
@@ -192,6 +201,7 @@ export default function useAdaptiveIntervention(
       // Check for strong emotion → acceptance nudge instead of question
       if (detectStrongEmotion(transcript)) {
         const text = selectEmotionalNudge();
+        hasActiveRef.current = true;
         setActiveQuestion(text);
         setQuestionPhase('hold');
         setInterventionType('nudge');
@@ -243,6 +253,7 @@ export default function useAdaptiveIntervention(
       interventionCountRef.current += 1;
       lastInterventionTimeRef.current = duration;
 
+      hasActiveRef.current = true;
       setActiveQuestion(questionText);
       setQuestionPhase('typing');
       setInterventionType('question');

@@ -288,10 +288,6 @@ export async function createCoachingSession() {
   return request('/api/coaching', { method: 'POST' });
 }
 
-export async function getCoachingSession(id: string) {
-  return request(`/api/coaching/${id}`);
-}
-
 export async function getCoachingInitialMessage(id: string, stage: number, mode: string) {
   return request(`/api/coaching/${id}/initial`, {
     method: 'POST',
@@ -345,15 +341,6 @@ export async function endCoachingSession(id: string) {
   return request(`/api/coaching/${id}/end`, { method: 'POST' });
 }
 
-export async function submitCoachingFeedback(data: {
-  score: number;
-  comment?: string;
-  suggestion?: string;
-  device_id?: string;
-}): Promise<unknown> {
-  return submitFeedback(data);
-}
-
 // === Brain Dump API ===
 
 export async function fetchBrainDumpQuestion(
@@ -365,15 +352,6 @@ export async function fetchBrainDumpQuestion(
   return request('/api/brain-dump/question', {
     method: 'POST',
     body: JSON.stringify({ transcript, duration, questionsShown, phase }),
-  });
-}
-
-export async function fetchIntegrationQuestion(
-  transcript: string,
-): Promise<{ question: string }> {
-  return request('/api/brain-dump/integration', {
-    method: 'POST',
-    body: JSON.stringify({ transcript }),
   });
 }
 
