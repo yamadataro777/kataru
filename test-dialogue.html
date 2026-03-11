@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dialogue Coaching Test</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0A0E1A;
+    color: #E8EDF5;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+
+  /* Controls */
+  .controls {
+    background: rgba(0,212,255,0.05);
+    border-bottom: 1px solid rgba(0,212,255,0.2);
+    padding: 10px 16px;
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  }
+  .controls button {
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.3);
+    color: #00D4FF;
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+  .controls button:hover { background: rgba(0,212,255,0.2); }
+  .controls button.active { background: rgba(0,212,255,0.3); border-color: #00D4FF; }
+  .controls button.danger { border-color: rgba(255,59,122,0.4); color: #FF3B7A; background: rgba(255,59,122,0.1); }
+  .controls button.success { border-color: rgba(168,255,0,0.4); color: #A8FF00; background: rgba(168,255,0,0.1); }
+  .controls button.warn { border-color: rgba(255,180,0,0.4); color: #FFB400; background: rgba(255,180,0,0.1); }
+  .controls button:disabled { opacity: 0.3; cursor: default; }
+  .ctrl-label { font-size: 9px; color: rgba(232,237,245,0.4); letter-spacing: 2px; }
+
+  /* App container */
+  .app { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+  /* Header */
+  .header {
+    padding: 12px 16px 8px;
+    flex-shrink: 0;
+  }
+  .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .back-btn { font-size: 9px; letter-spacing: 2px; color: #00D4FF; background: none; border: none; cursor: pointer; font-family: inherit; }
+  .stage-label { font-size: 9px; letter-spacing: 2px; color: #FF3B7A; display: flex; align-items: center; gap: 6px; }
+  .stage-dot { width: 6px; height: 6px; border-radius: 50%; background: #FF3B7A; box-shadow: 0 0 6px #FF3B7A; animation: rec-pulse 2s ease infinite; }
+  .header-line { height: 1px; background: rgba(0,212,255,0.15); }
+
+  /* Stage progress */
+  .stage-bar { display: flex; gap: 4px; margin-bottom: 8px; }
+  .stage-seg {
+    flex: 1; height: 3px; border-radius: 2px;
+    background: rgba(232,237,245,0.1);
+    transition: background 0.4s;
+  }
+  .stage-seg.completed { background: #A8FF00; box-shadow: 0 0 4px rgba(168,255,0,0.3); }
+  .stage-seg.current { background: #00D4FF; box-shadow: 0 0 4px rgba(0,212,255,0.3); }
+  .stage-seg.current.logical { background: #00D4FF; }
+  .stage-seg.current.emotional { background: #FF3B7A; }
+
+  /* Mode selector */
+  .mode-select {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 24px; padding: 20px;
+  }
+  .mode-title { font-size: 11px; letter-spacing: 3px; color: #00D4FF; }
+  .mode-cards { display: flex; gap: 12px; }
+  .mode-card {
+    width: 140px; padding: 20px 12px; border-radius: 8px; text-align: center; cursor: pointer;
+    border: 1px solid rgba(232,237,245,0.1); background: rgba(16,22,42,0.7);
+    transition: all 0.2s;
+  }
+  .mode-card:hover { border-color: rgba(0,212,255,0.3); }
+  .mode-card.selected { border-color: #00D4FF; background: rgba(0,212,255,0.05); }
+  .mode-card .icon { font-size: 24px; margin-bottom: 8px; }
+  .mode-card .name { font-size: 10px; letter-spacing: 2px; color: #00D4FF; margin-bottom: 4px; }
+  .mode-card .desc { font-size: 8px; color: rgba(232,237,245,0.4); line-height: 1.6; }
+
+  /* Conversation thread */
+  .thread {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .bubble {
+    max-width: 85%; padding: 12px 14px; border-radius: 12px;
+    font-size: 11px; line-height: 1.8; letter-spacing: 0.3px;
+  }
+  .bubble.user {
+    align-self: flex-end;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    color: rgba(232,237,245,0.85);
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.ai {
+    align-self: flex-start;
+    background: rgba(255,59,122,0.05);
+    border: 1px solid rgba(255,59,122,0.15);
+    color: rgba(232,237,245,0.85);
+    border-bottom-left-radius: 4px;
+  }
+  .bubble .phase-tag {
+    font-size: 8px; letter-spacing: 1px; margin-bottom: 4px;
+    color: rgba(255,59,122,0.5);
+  }
+  .bubble .timestamp {
+    font-size: 8px; color: rgba(232,237,245,0.25); margin-top: 4px;
+  }
+  .typing-cursor {
+    display: inline-block; width: 2px; height: 12px;
+    background: #FF3B7A; margin-left: 2px;
+    animation: blink 0.8s step-end infinite;
+  }
+  .processing-indicator {
+    align-self: flex-start;
+    font-size: 10px; color: rgba(255,59,122,0.5);
+    letter-spacing: 2px;
+    animation: neon-flicker 2s ease infinite;
+  }
+
+  /* Bottom controls */
+  .bottom-bar {
+    flex-shrink: 0; padding: 12px 16px;
+    border-top: 1px solid rgba(0,212,255,0.1);
+  }
+  .advance-btn-wrap { text-align: center; margin-bottom: 12px; }
+  .advance-btn {
+    font-size: 9px; letter-spacing: 2px; padding: 8px 20px;
+    border-radius: 4px; cursor: pointer; font-family: inherit;
+    background: rgba(168,255,0,0.08);
+    border: 1px solid rgba(168,255,0,0.3);
+    color: #A8FF00;
+    transition: all 0.2s;
+  }
+  .advance-btn:disabled { opacity: 0.3; cursor: default; }
+  .advance-btn:hover:not(:disabled) { background: rgba(168,255,0,0.15); }
+  .missing-req {
+    font-size: 8px; color: rgba(232,237,245,0.3); margin-top: 6px;
+    text-align: center; letter-spacing: 0.5px;
+  }
+
+  /* Record button */
+  .record-area { display: flex; justify-content: center; align-items: center; gap: 12px; }
+  .rec-btn {
+    width: 56px; height: 56px; border-radius: 50%;
+    border: 2px solid #FF3B7A; background: rgba(255,59,122,0.1);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 0 16px rgba(255,59,122,0.2);
+  }
+  .rec-btn:hover { background: rgba(255,59,122,0.2); }
+  .rec-btn.recording { animation: pulse 1.5s ease infinite; border-color: #FF3B7A; }
+  .rec-btn svg { fill: #FF3B7A; }
+  .rec-duration {
+    font-size: 10px; color: rgba(255,59,122,0.6);
+    letter-spacing: 2px; min-width: 40px;
+  }
+
+  /* Mode switch banner */
+  .mode-switch-banner {
+    margin: 0 16px 8px; padding: 10px 14px; border-radius: 8px;
+    border: 1px solid rgba(168,255,0,0.2);
+    background: rgba(168,255,0,0.05);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .mode-switch-banner .text { font-size: 9px; color: rgba(168,255,0,0.7); line-height: 1.6; }
+  .mode-switch-banner .btns { display: flex; gap: 8px; }
+  .mode-switch-banner button {
+    flex: 1; padding: 6px; border-radius: 4px; font-size: 9px;
+    letter-spacing: 1px; cursor: pointer; font-family: inherit;
+  }
+
+  /* Log panel */
+  .log-panel {
+    background: rgba(16,22,42,0.95);
+    border-top: 1px solid rgba(0,212,255,0.2);
+    max-height: 180px; overflow-y: auto; padding: 8px 12px;
+  }
+  .log-entry { font-size: 8px; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); display: flex; gap: 6px; }
+  .log-t { color: rgba(0,212,255,0.4); min-width: 24px; }
+  .log-m { color: rgba(232,237,245,0.5); }
+  .log-m.stage { color: #A8FF00; }
+  .log-m.ai { color: #FF3B7A; }
+  .log-m.user { color: #00D4FF; }
+  .log-m.err { color: #FF3B7A; }
+
+  @keyframes rec-pulse { 0%,100% { opacity:1 } 50% { opacity:0.3 } }
+  @keyframes pulse { 0%,100% { transform:scale(1) } 50% { transform:scale(1.05) } }
+  @keyframes blink { 50% { opacity:0 } }
+  @keyframes neon-flicker { 0%,100% { opacity:1 } 50% { opacity:0.6 } }
+</style>
+</head>
+<body>
+
+<!-- Test Controls -->
+<div class="controls">
+  <span class="ctrl-label">TEST</span>
+  <button onclick="simulateUserTurn()" id="btnTurn">SEND TURN</button>
+  <button onclick="simulateAdvance()" id="btnAdvance" class="success" disabled>ADVANCE</button>
+  <button onclick="simulateModeSuggestion()" class="warn">MODE SWITCH</button>
+  <button onclick="simulateError()" class="danger">ERROR</button>
+  <button onclick="resetAll()" class="danger">RESET</button>
+  <button onclick="toggleLog()" style="margin-left:auto">LOG</button>
+</div>
+
+<div class="app" id="app"></div>
+
+<!-- Log -->
+<div class="log-panel" id="logPanel" style="display:none"></div>
+
+<script>
+// =====================================================================
+// STATE
+// =====================================================================
+const state = {
+  screen: 'mode_select', // mode_select | coaching | processing | complete
+  conversationId: 'test-' + Date.now(),
+  currentStage: 1,
+  stageMode: null, // 'logical' | 'emotional'
+  turns: [],
+  turnCounter: 0,
+  canAdvance: false,
+  missingRequirements: [],
+  isProcessing: false,
+  isRecording: false,
+  recordDuration: 0,
+  error: null,
+  modeSwitchBanner: null,
+};
+
+// Mock AI responses per stage
+const mockAI = {
+  1: {
+    logical: {
+      initial: 'こんにちは。今日はどんなことを整理したいですか？仕事、人間関係、将来のこと、何でも構いません。まず、一番気になっていることを教えてください。',
+      responses: [
+        'なるほど、{topic}について考えているんですね。もう少し具体的に教えてもらえますか？例えば、一番困っている場面はどんな時ですか？',
+        'その状況について、あなたが特に「これが問題だ」と感じているポイントはどこですか？',
+        'いくつかの要素が絡み合っているようですね。優先順位をつけるとしたら、最初に解決したいのはどれですか？',
+        'ここまでの話を整理すると、{summary}ということですね。この理解で合っていますか？',
+      ],
+    },
+    emotional: {
+      initial: 'こんにちは。今日はどんな気持ちを抱えていますか？うまく言葉にならなくても大丈夫です。感じていることをそのまま話してください。',
+      responses: [
+        'その気持ちを教えてくれてありがとうございます。{emotion}という感覚は、いつ頃から感じていますか？',
+        'そのモヤモヤの裏には、本当はどうなりたいという気持ちがありそうですか？',
+        '今の話を聞いていて、あなたの中に矛盾する気持ちがあるように感じました。それについてどう思いますか？',
+        '少しずつ輪郭が見えてきましたね。その感情の正体は何だと思いますか？',
+      ],
+    },
+  },
+  2: {
+    initial: 'Stage 1で見えてきたことを踏まえて、次は「どうなりたいか」を具体化していきましょう。理想の状態をイメージしてみてください。',
+    responses: [
+      'いいですね。その目標を、もう少し具体的にできますか？いつまでに、どんな状態になっていたいですか？',
+      'その目標が達成されたとき、周りから見てどんな変化が起きていますか？',
+      '目標は明確になってきました。なぜこの目標が大切なのか、改めて言葉にしてみてください。',
+    ],
+  },
+  3: {
+    initial: '目標が見えてきたところで、具体的な行動を考えましょう。最初の一歩として、何ができそうですか？',
+    responses: [
+      'その行動を実行するために、必要なリソースや時間はありますか？',
+      '障害になりそうなことはありますか？もしあるとしたら、どう対処できそうですか？',
+      '具体的なアクションプランが見えてきましたね。最初の一歩はいつ実行しますか？',
+    ],
+  },
+  4: {
+    initial: 'ここまでよく考えてきましたね。最後に、この計画に対するあなたの自信度を10段階で教えてください。',
+    responses: [
+      'ありがとうございます。自信度を上げるために、何があれば良いと思いますか？',
+      '最後に、「私は{commitment}」と宣言してみてください。言葉にすることで、気持ちが変わることがあります。',
+      'セッションを通じて、素晴らしい気づきがありましたね。あなたの成長を応援しています。',
+    ],
+  },
+};
+
+const mockUserMessages = [
+  '最近、転職するかどうかで悩んでいます。今の会社は安定しているけど、成長が感じられなくて。',
+  'もう2年くらいずっと考えています。でも踏み出す勇気がなくて。家族のことも考えると...',
+  '一番の問題は、自分が本当に何をしたいのかがわからないことだと思います。',
+  '3ヶ月以内に方向性を決めたいです。少なくとも情報収集は始めたい。',
+  'まず、興味のある業界の人に話を聞いてみようと思います。',
+  '週に1人ずつ、知り合いのつてでOB訪問をしてみます。',
+  '自信度は6くらいです。やってみないとわからないですが。',
+  '「私は3ヶ月で次のキャリアの方向性を見つける」。言ってみると覚悟が決まる感じがします。',
+];
+
+let userMsgIdx = 0;
+let aiRespIdx = {};
+let recordTimer = null;
+
+// =====================================================================
+// RENDER
+// =====================================================================
+function render() {
+  const app = document.getElementById('app');
+
+  if (state.screen === 'mode_select') {
+    app.innerHTML = renderModeSelect();
+  } else if (state.screen === 'coaching') {
+    app.innerHTML = renderCoaching();
+    // Scroll thread to bottom
+    const thread = document.getElementById('thread');
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  }
+
+  // Update test control buttons
+  document.getElementById('btnAdvance').disabled = !state.canAdvance;
+}
+
+function renderModeSelect() {
+  return `
+    <div class="header">
+      <div class="header-top">
+        <button class="back-btn">&larr; BACK</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="width:6px;height:6px;border-radius:50%;background:#00D4FF;box-shadow:0 0 6px #00D4FF;animation:rec-pulse 2s ease infinite"></span>
+          <span style="font-size:9px;letter-spacing:2px;color:#00D4FF">COACHING</span>
+        </div>
+      </div>
+      <div class="header-line"></div>
+    </div>
+    <div class="mode-select">
+      <span class="mode-title">アプローチを選択</span>
+      <div class="mode-cards">
+        <div class="mode-card" onclick="selectMode('logical')">
+          <div class="icon">🧠</div>
+          <div class="name">論理整理</div>
+          <div class="desc">状況を構造化して<br>判断を明確にする</div>
+        </div>
+        <div class="mode-card" onclick="selectMode('emotional')">
+          <div class="icon">💭</div>
+          <div class="name">感情整理</div>
+          <div class="desc">気持ちに寄り添い<br>本音を引き出す</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderCoaching() {
+  const stageBar = [1,2,3,4].map(s => {
+    let cls = 'stage-seg';
+    if (s < state.currentStage) cls += ' completed';
+    else if (s === state.currentStage) cls += ` current ${state.stageMode || ''}`;
+    return `<div class="${cls}"></div>`;
+  }).join('');
+
+  const turnsHtml = state.turns.map(t => {
+    if (t.role === 'user') {
+      return `<div class="bubble user">
+        ${t.text}
+        <div class="timestamp">${t.time}</div>
+      </div>`;
+    } else {
+      return `<div class="bubble ai">
+        <div class="phase-tag">STAGE ${t.stage} ${t.mode ? '· ' + (t.mode === 'logical' ? '論理' : '感情') : ''}</div>
+        ${t.text}${t.typing ? '<span class="typing-cursor"></span>' : ''}
+        <div class="timestamp">${t.time}</div>
+      </div>`;
+    }
+  }).join('');
+
+  const processingHtml = state.isProcessing ? '<div class="processing-indicator">分析中...</div>' : '';
+
+  const modeSwitchHtml = state.modeSwitchBanner ? `
+    <div class="mode-switch-banner">
+      <div class="text">${state.modeSwitchBanner.reason}</div>
+      <div class="btns">
+        <button onclick="declineSwitch()" style="background:transparent;border:1px solid rgba(232,237,245,0.2);color:rgba(232,237,245,0.5)">そのまま</button>
+        <button onclick="acceptSwitch()" style="background:rgba(168,255,0,0.08);border:1px solid rgba(168,255,0,0.3);color:#A8FF00">${state.modeSwitchBanner.suggestedMode === 'logical' ? '論理整理' : '感情整理'}に切替</button>
+      </div>
+    </div>` : '';
+
+  const errorHtml = state.error ? `
+    <div style="padding:8px 16px;text-align:center">
+      <p style="font-size:10px;color:#FF3B7A;letter-spacing:1px;margin-bottom:6px">${state.error}</p>
+      <button onclick="clearError()" style="font-size:9px;letter-spacing:2px;padding:4px 16px;border-radius:4px;cursor:pointer;font-family:inherit;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.06);color:#00D4FF">再試行</button>
+    </div>` : '';
+
+  const advanceHtml = state.canAdvance ? `
+    <div class="advance-btn-wrap">
+      <button class="advance-btn" onclick="simulateAdvance()">
+        ${state.currentStage >= 4 ? 'セッション完了' : `STAGE ${state.currentStage + 1} へ進む`}
+      </button>
+    </div>` :
+    (state.missingRequirements.length > 0 ? `
+    <div class="advance-btn-wrap">
+      <button class="advance-btn" disabled>STAGE ${state.currentStage + 1} へ進む</button>
+      <div class="missing-req">${state.missingRequirements.join(' / ')}</div>
+    </div>` : '');
+
+  return `
+    <div class="header">
+      <div class="header-top">
+        <button class="back-btn">&larr; BACK</button>
+        <div class="stage-label">
+          <span class="stage-dot"></span>
+          STAGE ${state.currentStage} / 4
+        </div>
+      </div>
+      <div class="stage-bar">${stageBar}</div>
+      <div class="header-line"></div>
+    </div>
+    <div class="thread" id="thread">${turnsHtml}${processingHtml}</div>
+    ${modeSwitchHtml}
+    ${errorHtml}
+    <div class="bottom-bar">
+      ${advanceHtml}
+      <div class="record-area">
+        ${state.isRecording ? `<span class="rec-duration">${formatDuration(state.recordDuration)}</span>` : ''}
+        <div class="rec-btn ${state.isRecording ? 'recording' : ''}" onclick="toggleRecord()">
+          <svg width="20" height="20" viewBox="0 0 24 24">
+            ${state.isRecording
+              ? '<rect x="6" y="6" width="12" height="12" rx="2"/>'
+              : '<circle cx="12" cy="12" r="8"/>'
+            }
+          </svg>
+        </div>
+        ${state.isRecording ? `<span class="rec-duration">&nbsp;</span>` : ''}
+      </div>
+    </div>`;
+}
+
+// =====================================================================
+// ACTIONS
+// =====================================================================
+function selectMode(mode) {
+  state.stageMode = mode;
+  state.screen = 'coaching';
+  state.isProcessing = true;
+  state.missingRequirements = ['中心的な問題の特定', '状況の具体化', '優先順位の明確化'];
+  log('stage', `Mode selected: ${mode}`);
+  render();
+
+  // Simulate initial AI message
+  setTimeout(() => {
+    const msg = mockAI[1][mode].initial;
+    typewriterAI(msg, 1, mode);
+    state.isProcessing = false;
+    log('ai', `Initial: ${msg.slice(0,30)}...`);
+  }, 800);
+}
+
+function simulateUserTurn() {
+  if (state.screen !== 'coaching' || state.isProcessing) return;
+
+  const text = mockUserMessages[userMsgIdx % mockUserMessages.length];
+  userMsgIdx++;
+  state.turnCounter++;
+
+  state.turns.push({ role: 'user', text, time: now(), stage: state.currentStage });
+  state.isProcessing = true;
+  log('user', text.slice(0, 40) + '...');
+  render();
+
+  // Simulate AI response after delay
+  setTimeout(() => {
+    const stage = state.currentStage;
+    const stageKey = String(stage);
+    if (!aiRespIdx[stageKey]) aiRespIdx[stageKey] = 0;
+
+    let responses;
+    if (stage === 1) {
+      responses = mockAI[1][state.stageMode].responses;
+    } else {
+      responses = mockAI[stage].responses;
+    }
+
+    const idx = aiRespIdx[stageKey] % responses.length;
+    let text = responses[idx];
+    text = text.replace('{topic}', '転職').replace('{emotion}', 'モヤモヤ').replace('{summary}', '成長と安定の間で悩んでいる').replace('{commitment}', '3ヶ月で方向性を見つける');
+    aiRespIdx[stageKey]++;
+
+    // After 3 turns in a stage, allow advance
+    if (aiRespIdx[stageKey] >= 3) {
+      state.canAdvance = true;
+      state.missingRequirements = [];
+    } else {
+      state.canAdvance = false;
+      const reqs = {
+        1: ['中心的な問題の特定', '優先順位の明確化'],
+        2: ['目標の具体化', '期限の設定'],
+        3: ['最初の一歩の決定'],
+        4: ['コミットメント宣言'],
+      };
+      state.missingRequirements = (reqs[stage] || []).slice(0, 3 - aiRespIdx[stageKey]);
+    }
+
+    typewriterAI(text, stage, state.stageMode);
+    state.isProcessing = false;
+    log('ai', text.slice(0, 40) + '...');
+  }, 1200);
+}
+
+function simulateAdvance() {
+  if (!state.canAdvance) return;
+
+  if (state.currentStage >= 4) {
+    state.screen = 'complete';
+    log('stage', 'Session complete!');
+    document.getElementById('app').innerHTML = `
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:20px">
+        <span style="font-size:24px">✨</span>
+        <span style="font-size:11px;letter-spacing:3px;color:#A8FF00">SESSION COMPLETE</span>
+        <span style="font-size:9px;color:rgba(232,237,245,0.4);letter-spacing:1px">→ /dialogue/results へ遷移</span>
+        <button onclick="resetAll()" style="margin-top:16px;font-size:9px;letter-spacing:2px;padding:8px 20px;border-radius:4px;cursor:pointer;font-family:inherit;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.06);color:#00D4FF">RESET</button>
+      </div>`;
+    return;
+  }
+
+  const nextStage = state.currentStage + 1;
+  state.currentStage = nextStage;
+  state.canAdvance = false;
+  state.isProcessing = true;
+  state.missingRequirements = [];
+  aiRespIdx[String(nextStage)] = 0;
+  log('stage', `Advanced to Stage ${nextStage}`);
+  render();
+
+  setTimeout(() => {
+    const msg = mockAI[nextStage].initial;
+    typewriterAI(msg, nextStage, state.stageMode);
+    state.isProcessing = false;
+
+    const reqs = {
+      2: ['目標の具体化', '期限の設定', '目標の意味'],
+      3: ['行動の具体化', '障害の認識', '最初の一歩'],
+      4: ['自信度の確認', 'コミットメント'],
+    };
+    state.missingRequirements = reqs[nextStage] || [];
+    log('ai', `Stage ${nextStage} initial: ${msg.slice(0,30)}...`);
+  }, 1000);
+}
+
+function simulateModeSuggestion() {
+  if (state.screen !== 'coaching') return;
+  const suggested = state.stageMode === 'logical' ? 'emotional' : 'logical';
+  state.modeSwitchBanner = {
+    suggestedMode: suggested,
+    reason: `感情的な要素が多く見られます。${suggested === 'emotional' ? '感情整理' : '論理整理'}モードに切り替えると、より深い気づきが得られるかもしれません。`,
+  };
+  log('stage', `Mode switch suggested: ${suggested}`);
+  render();
+}
+
+function acceptSwitch() {
+  if (!state.modeSwitchBanner) return;
+  const newMode = state.modeSwitchBanner.suggestedMode;
+  state.stageMode = newMode;
+  state.modeSwitchBanner = null;
+  state.canAdvance = false;
+  aiRespIdx['1'] = 0;
+  log('stage', `Mode switched to: ${newMode}`);
+
+  state.isProcessing = true;
+  render();
+  setTimeout(() => {
+    const msg = `モードを${newMode === 'logical' ? '論理整理' : '感情整理'}に切り替えました。${mockAI[1][newMode].initial}`;
+    typewriterAI(msg, 1, newMode);
+    state.isProcessing = false;
+  }, 800);
+}
+
+function declineSwitch() {
+  state.modeSwitchBanner = null;
+  log('stage', 'Mode switch declined');
+  render();
+}
+
+function simulateError() {
+  state.error = 'メッセージの送信に失敗しました。もう一度お試しください。';
+  log('err', state.error);
+  render();
+}
+
+function clearError() {
+  state.error = null;
+  render();
+}
+
+function toggleRecord() {
+  if (state.isProcessing) return;
+  if (state.isRecording) {
+    // Stop recording → submit turn
+    clearInterval(recordTimer);
+    state.isRecording = false;
+    log('user', `Recording stopped: ${state.recordDuration}s`);
+    state.recordDuration = 0;
+    render();
+    simulateUserTurn();
+  } else {
+    // Start recording
+    state.isRecording = true;
+    state.recordDuration = 0;
+    recordTimer = setInterval(() => {
+      state.recordDuration++;
+      render();
+    }, 1000);
+    log('user', 'Recording started');
+    render();
+  }
+}
+
+// =====================================================================
+// TYPEWRITER
+// =====================================================================
+function typewriterAI(text, stage, mode) {
+  const turn = {
+    role: 'ai', text: '', fullText: text, typing: true,
+    time: now(), stage, mode,
+  };
+  state.turns.push(turn);
+  render();
+
+  let charIdx = 0;
+  const interval = setInterval(() => {
+    charIdx++;
+    turn.text = text.slice(0, charIdx);
+    if (charIdx >= text.length) {
+      turn.typing = false;
+      clearInterval(interval);
+    }
+    render();
+  }, 30);
+}
+
+// =====================================================================
+// UTIL
+// =====================================================================
+function now() {
+  const d = new Date();
+  return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+}
+
+function formatDuration(s) {
+  const m = Math.floor(s / 60).toString().padStart(2, '0');
+  const ss = (s % 60).toString().padStart(2, '0');
+  return `${m}:${ss}`;
+}
+
+function toggleLog() {
+  const p = document.getElementById('logPanel');
+  p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+
+function log(type, msg) {
+  const p = document.getElementById('logPanel');
+  const e = document.createElement('div');
+  e.className = 'log-entry';
+  e.innerHTML = `<span class="log-t">S${state.currentStage}</span><span class="log-m ${type}">${msg}</span>`;
+  p.appendChild(e);
+  p.scrollTop = p.scrollHeight;
+}
+
+function resetAll() {
+  state.screen = 'mode_select';
+  state.currentStage = 1;
+  state.stageMode = null;
+  state.turns = [];
+  state.turnCounter = 0;
+  state.canAdvance = false;
+  state.missingRequirements = [];
+  state.isProcessing = false;
+  state.isRecording = false;
+  state.recordDuration = 0;
+  state.error = null;
+  state.modeSwitchBanner = null;
+  userMsgIdx = 0;
+  aiRespIdx = {};
+  clearInterval(recordTimer);
+  document.getElementById('logPanel').innerHTML = '';
+  log('stage', 'Reset');
+  render();
+}
+
+// Init
+render();
+log('stage', 'Test page ready. Select a mode to begin.');
+</script>
+</body>
+</html>

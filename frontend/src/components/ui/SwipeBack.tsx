@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useRef, useState } from 'react';
 
-const DISABLED_PATHS = ['/', '/history', '/analytics'];
+const DISABLED_PATHS = ['/', '/analytics'];
 
 const EDGE_THRESHOLD = 25;
 const SWIPE_THRESHOLD = 80;

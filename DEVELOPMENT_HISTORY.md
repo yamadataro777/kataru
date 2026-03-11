@@ -1,5 +1,52 @@
 # Kataru 開発の軌跡
 
+## 2026-03-10: 思考の交通整理アプリへの変革
+
+### 概要
+多機能レポート構造から「3分話せば、いま何が詰まりかと、次に何をやるかが見える」対話体験への変革。
+
+### 変更内容
+
+**Step 1: データ層**
+- Report型に `blockage`, `discussion_points`, `next_step` の3フィールド追加（frontend/backend両方）
+- Geminiプロンプト（Free/Paid両方）に3カード構造の出力ルール追加
+
+**Step 2: 質問ライブラリ改修**
+- Question interfaceを拡張（trigger_types, depth_level, interruptiveness等）
+- カテゴリ再マッピング: deepening→diverge_converge, causality→root_cause, action→next_step, perspective→contradiction, structure→topic_connect
+- `detectStagnation()` 停滞語検知関数を追加
+- `selectQuestionByTrigger()`, `selectDifferentQuestion()` を追加
+- nudge関連コード（selectNudge）を削除
+
+**Step 3: 質問介入ロジック改修**
+- タイミング定数変更: SESSION_WARMUP 15→45秒, COOLDOWN 25→50秒, MAX_INTERVENTIONS 10→2
+- 4トリガー実装: 沈黙(6s+), 停滞語(3s+沈黙), 長話(120s+連続発話), トピックジャンプ
+- nudge廃止、silenceMessage（「考え中でも大丈夫」）に置換
+- QuestionTrayコールバック（onContinue/onLater/onDifferent）追加
+- 15秒自動dismiss
+
+**Step 4: Session録音UI改修**
+- StimulusPrompt → QuestionTray化（ボトムドロワー + 3ボタン）
+- silenceMessage表示追加、プライバシーアイコン追加
+
+**Step 5: Results画面の再構築**
+- 3カード構造（今の詰まり/論点/次の一歩）+ 4アクションボタン
+- 「全文を見る」折りたたみで従来のレポートを表示
+- IncubationMessage, PastConclusion, UnlockBanner, textarea結論を削除
+- 削除機能（確認ダイアログ付き）追加
+
+**Step 6: Home画面の変革**
+- 巨大CTA「話し始める」に統一
+- 直近1セッションのインライン表示
+- プライバシーノート追加
+- Welcome/おかえり分岐、streak、RecentSessions、getConversations削除
+
+**Step 7: Archive/Search画面**
+- `/archive` 新規作成（検索 + 「次の一歩あり」フィルタ）
+- BottomNav: ANALYTICS → ARCHIVE に変更
+
+---
+
 > **プロジェクト名:** Kataru（語る）
 > **コンセプト:** 声で話すだけで、考えが整理される。音声×AIの思考整理アプリ。
 > **開発期間:** 2026年3月1日〜2日（約12時間の集中開発スプリント）
@@ -1023,4 +1070,88 @@ YouTube台本で提示した5ステップ思考フレームワークのうち、
 - `frontend/src/app/onboarding/components/OnboardingProcessing.tsx` (新規)
 - `frontend/src/app/onboarding/components/OnboardingResult.tsx` (新規)
 
-*このドキュメントは2026年3月8日時点の開発状況を記録したものです。*
+---
+
+## 2026-03-09: Brain Dump — 30秒リズム質問生成
+
+### 設計思想
+Record機能を最もシンプルな形に。ユーザーは自由に話し、30秒ごとに直近の発話内容に基づいた質問が飛んでくる。沈黙検知やフェーズ遷移は使わず、タイマーベースの予測可能なリズム。
+
+### コアメカニクス
+```
+[0s]─話す─[20s]→API発火─[30s]→質問表示─話す─[50s]→API発火─[60s]→質問表示...
+```
+- 30秒間隔で質問表示（タイマーベース）
+- 表示10秒前にGeminiへprefetchリクエスト（レイテンシ吸収）
+- AI失敗時は静的質問プールにフォールバック
+- 60秒以上録音後のSTOP → インライン統合質問
+
+### 実装内容
+- **Equalizer**: 常時回転（`duration * 0.5°`）。カラーは固定（cyan→magenta）
+- **タイマー**: 控えめ化（text-[20px], opacity-0.6）
+- **質問表示**: タイプライター効果（clip-path）→ 5秒保持 → opacity fade out
+- **統合**: モーダル廃止、インラインで統合質問 + SKIP/DONEボタン
+- **AIバックエンド**: `POST /api/brain-dump/question`（フェーズ別）+ `/integration`
+- **Geminiプロンプト**: 15-30文字の内省の問い。expansion/connection/confrontation
+- **静的質問15問**: depth 1-3（回数ベースで深度遷移: 0-1→depth1, 2-4→depth2, 5+→depth3）
+- **触覚フィードバック**: @capacitor/haptics。質問=light、統合=medium
+
+### 変更ファイル
+- `frontend/src/app/record/page.tsx` (書き換え — 30秒リズム質問、インライン統合)
+- `frontend/src/components/recording/CircularEqualizer.tsx` (簡素化 — 回転+barHeight制御のみ)
+- `frontend/src/components/recording/StimulusPrompt.tsx` (書き換え — typewriter + opacity dissolve)
+- `frontend/src/components/recording/RecordTimer.tsx` (修正 — サイズ・opacity調整)
+- `frontend/src/data/stimulusQuestions.ts` (修正 — 5問追加、回数ベース深度選択)
+- `frontend/src/hooks/useBrainDumpQuestions.ts` (新規 — AI→staticフォールバック)
+- `frontend/src/hooks/useSilenceDetector.ts` (修正 — speechDetected追加)
+- `frontend/src/lib/api.ts` (修正 — brain-dump API追加)
+- `backend/src/routes/brain-dump.ts` (新規)
+- `backend/src/prompts/brain-dump-prompt.ts` (新規)
+- `backend/src/services/gemini.ts` (修正 — brain-dump関数追加)
+- `backend/src/app.ts` (修正 — brain-dumpルート登録)
+
+---
+
+### 2026-03-10: Hybrid Question Intervention System（MVP）
+
+**目的:** 固定30秒間隔のAPI依存質問生成を、沈黙検知ベース + 質問ライブラリ方式に置換。レイテンシゼロ・API呼び出しゼロで自然なタイミングの質問介入を実現。
+
+**設計:**
+- 7秒以上の沈黙を検知して質問を発火（`useSilenceDetector` — AnalyserNode 200msポーリング、ref方式で再レンダリ防止）
+- 32問の質問ライブラリ（8カテゴリ × 4問）から5段階フィルタで選択（timing → category重複排除 → depth → ランダム）
+- ウォームアップ60秒、クールダウン30秒、最大8回/セッション
+
+**変更ファイル:**
+- `frontend/src/lib/question-library.ts` (新規 — 32問ライブラリ + selectQuestion)
+- `frontend/src/hooks/useSilenceDetector.ts` (書き換え — ref方式、AnalyserNode直接ポーリング)
+- `frontend/src/hooks/useQuestionIntervention.ts` (新規 — 沈黙トリガー + 質問表示管理)
+- `frontend/src/app/record/page.tsx` (修正 — useBrainDumpQuestions → useQuestionIntervention に置換)
+
+**無効化されたファイル（未使用）:**
+- `frontend/src/hooks/useBrainDumpQuestions.ts`
+- `frontend/src/data/stimulusQuestions.ts`
+
+### 2026-03-10: アダプティブ質問生成システム
+
+**目的:** ユーザーの発話内容に無関係なランダム質問から、コンテキスト適応型の3層質問生成へ進化。DialogueのエッセンスをRecord（モノローグ）に最適化して転用。
+
+**設計 — 3層ハイブリッドアーキテクチャ:**
+- **レベル1（即座）**: ローカルライブラリからランダム選択（最初の2回の介入）
+- **レベル2（即座）**: フェーズ＋コンテキストによるカテゴリスコアリング選択（3回目以降）
+- **レベル3（2-4秒）**: Gemini APIでtranscript連動のAI質問をバックグラウンド生成、キャッシュして次の沈黙で使用
+
+**新機能:**
+- 相づちナッジ（4-7秒の沈黙→「うんうん」「それで？」を控えめ表示）
+- 3フェーズ自動遷移: expansion(0-3分) → connection(3-7分) → confrontation(7分+)
+- 感情検知: 強い感情語2つ以上で受容ナッジに切替（深掘りしない）
+- 軽量コンテキスト抽出: transcript文字数から情報密度を推定
+- パラメータ調整: クールダウン30→25秒、最大介入8→10回
+
+**変更ファイル:**
+- `frontend/src/hooks/useAdaptiveIntervention.ts` (新規 — useQuestionIntervention.tsの置換)
+- `frontend/src/lib/question-library.ts` (拡張 — ナッジ、感情語辞書、scoreCategories、selectAdaptiveQuestion追加)
+- `frontend/src/components/recording/StimulusPrompt.tsx` (拡張 — isNudgeプロップ、控えめスタイル)
+- `frontend/src/app/record/page.tsx` (更新 — 新hook接続、interventionType表示分岐)
+- `frontend/src/hooks/useQuestionIntervention.ts` (削除)
+
+*このドキュメントは2026年3月10日時点の開発状況を記録したものです。*

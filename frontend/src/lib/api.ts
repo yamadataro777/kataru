@@ -108,13 +108,10 @@ export async function transcribe(sessionId: string, transcript?: string): Promis
   });
 }
 
-export async function generateReport(sessionId: string, onboardingType?: string): Promise<unknown> {
+export async function generateReport(sessionId: string): Promise<unknown> {
   return request('/api/report', {
     method: 'POST',
-    body: JSON.stringify({
-      session_id: sessionId,
-      ...(onboardingType && { onboarding_type: onboardingType }),
-    }),
+    body: JSON.stringify({ session_id: sessionId }),
   });
 }
 
@@ -295,10 +292,6 @@ export async function createCoachingSession() {
   return request('/api/coaching', { method: 'POST' });
 }
 
-export async function getCoachingSession(id: string) {
-  return request(`/api/coaching/${id}`);
-}
-
 export async function getCoachingInitialMessage(id: string, stage: number, mode: string) {
   return request(`/api/coaching/${id}/initial`, {
     method: 'POST',
@@ -411,4 +404,93 @@ export async function submitCoachingFeedback(data: {
   return submitFeedback(data);
 }
 
+// === Round Protocol API ===
 
+export interface RoundSessionMemory {
+  working_hypothesis: string | null;
+  open_loops: string[];
+  core_tension: string | null;
+  recent_question_angle: string;
+}
+
+export interface RoundQuestionResponse {
+  round_id: string;
+  transcript: string;
+  mirror: string;
+  question: string;
+  memory: RoundSessionMemory;
+  latency_ms: number;
+  used_fallback: boolean;
+}
+
+export interface RoundSummaryResponse {
+  blockage: string;
+  key_points: string[];
+  next_step: string;
+  latency_ms: number;
+}
+
+export async function createRoundSession(
+  selectedDuration: number,
+): Promise<{ id: string; created_at: string }> {
+  return request('/api/round/session', {
+    method: 'POST',
+    body: JSON.stringify({ selected_duration: selectedDuration }),
+  });
+}
+
+export async function submitRoundQuestion(formData: FormData): Promise<RoundQuestionResponse> {
+  const signal = createTimeoutSignal(30_000);
+  const authHeaders = await getAuthHeaders();
+  try {
+    const res = await fetch(`${BASE_URL}/api/round/question`, {
+      method: 'POST',
+      body: formData,
+      headers: authHeaders,
+      signal,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(error.message || error.error || '分析に失敗しました');
+    }
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('分析がタイムアウトしました。再試行してください。');
+    }
+    throw err;
+  }
+}
+
+export async function submitRoundSummary(data: {
+  session_id: string;
+  round3_transcript: string;
+  mirrors: string[];
+  questions: string[];
+  session_memory: RoundSessionMemory | null;
+}): Promise<RoundSummaryResponse> {
+  return request('/api/round/summary', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateRoundSession(
+  id: string,
+  data: { session_rating?: number; status?: string },
+): Promise<unknown> {
+  return request(`/api/round/session/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateRoundRound(
+  id: string,
+  questionRating: string,
+): Promise<unknown> {
+  return request(`/api/round/round/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ question_rating: questionRating }),
+  });
+}

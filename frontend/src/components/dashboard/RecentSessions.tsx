@@ -36,6 +36,7 @@ export default function RecentSessions({ sessions, conversations = [] }: RecentS
       user_conclusion: s.user_conclusion || null,
     }));
 
+    // Dialogue items temporarily hidden
     const convItems: RecentItem[] = conversations.map((c) => ({
       id: c.id,
       type: 'conversation',
@@ -47,8 +48,9 @@ export default function RecentSessions({ sessions, conversations = [] }: RecentS
         : `/dialogue?id=${c.id}`,
       user_conclusion: null,
     }));
+    void convItems; // keep code, suppress unused warning
 
-    return [...sessionItems, ...convItems]
+    return [...sessionItems]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 5);
   }, [sessions, conversations]);
@@ -69,12 +71,6 @@ export default function RecentSessions({ sessions, conversations = [] }: RecentS
         <span className="text-[9px] tracking-[3px] uppercase text-neon-cyan opacity-80">
           RECENT SESSIONS
         </span>
-        <button
-          onClick={() => router.push('/history')}
-          className="text-[9px] tracking-[1px] text-hud-white-dim bg-transparent border-0 cursor-pointer hover:text-neon-cyan transition-colors"
-        >
-          VIEW ALL
-        </button>
       </div>
       <div className="flex flex-col">
         {items.map((item) => {

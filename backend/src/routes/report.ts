@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getSession, updateSession } from '../services/supabase';
-import { generateReport, generateOnboardingReport } from '../services/gemini';
+import { generateReport } from '../services/gemini';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { getReportPlan, incrementSessionCount, getProfile } from '../services/profile';
 
@@ -10,7 +10,7 @@ const router = Router();
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { userId, userPlan } = req as AuthenticatedRequest;
-    const { session_id, onboarding_type } = req.body;
+    const { session_id } = req.body;
 
     if (!session_id) {
       res.status(400).json({ error: 'session_id is required' });
@@ -35,20 +35,6 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     await updateSession(session_id, { status: 'generating' });
-
-    // Onboarding sessions use a separate prompt and skip session count increment
-    if (onboarding_type && ['thinking', 'goal', 'emotion'].includes(onboarding_type)) {
-      const onboardingReport = await generateOnboardingReport(session.transcript, onboarding_type);
-
-      await updateSession(session_id, {
-        report: onboardingReport,
-        status: 'completed',
-      });
-
-      // Do NOT increment session count for onboarding sessions
-      res.json(onboardingReport);
-      return;
-    }
 
     // Determine report plan from user's actual plan + session count (gradual unlock)
     const profile = await getProfile(userId);

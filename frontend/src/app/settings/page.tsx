@@ -40,8 +40,6 @@ export default function SettingsPage() {
   }
 
   const clearLocalData = () => {
-    localStorage.removeItem('kataru_onboarding_completed');
-    localStorage.removeItem('kataru_onboarding_progress');
     localStorage.removeItem('kataru_feedback_completed');
     localStorage.removeItem('kataru_feedback_score');
     localStorage.removeItem('kataru_device_id');
@@ -61,12 +59,6 @@ export default function SettingsPage() {
       setError('アカウントの削除に失敗しました。時間を置いて再試行してください。');
       setDeleting(false);
     }
-  };
-
-  const handleReplayOnboarding = () => {
-    localStorage.removeItem('kataru_onboarding_completed');
-    localStorage.removeItem('kataru_onboarding_progress');
-    router.push('/onboarding');
   };
 
   return (
@@ -110,17 +102,6 @@ export default function SettingsPage() {
             利用規約
           </button>
         </div>
-      </GlassCard>
-
-      {/* Onboarding Replay */}
-      <GlassCard className="p-5 mb-4" variant="cyan">
-        <h2 className="text-[10px] tracking-[2px] text-hud-white-dim mb-3">ONBOARDING</h2>
-        <button
-          onClick={handleReplayOnboarding}
-          className="w-full text-xs tracking-[1px] text-neon-cyan bg-transparent border border-[rgba(0,212,255,0.3)] rounded-lg py-2.5 cursor-pointer hover:bg-[rgba(0,212,255,0.1)] transition-colors"
-        >
-          オンボーディングを再体験する
-        </button>
       </GlassCard>
 
       {/* Sign Out */}
@@ -196,12 +177,6 @@ export default function SettingsPage() {
                 Switch to {plan.toUpperCase()}
               </button>
             ))}
-            <button
-              onClick={handleReplayOnboarding}
-              className="w-full text-xs tracking-[1px] text-neon-lime bg-transparent border border-[rgba(168,255,0,0.3)] rounded-lg py-2 cursor-pointer hover:bg-[rgba(168,255,0,0.1)] transition-colors"
-            >
-              Replay Onboarding
-            </button>
           </div>
         </GlassCard>
       )}

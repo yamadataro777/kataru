@@ -80,11 +80,13 @@ npm -w frontend run lint
 
 No test framework is configured.
 
-### Xcode で開く
-「Xcodeで開いて」と指示されたら、以下をすべて実行すること:
-1. `cd frontend && npm run build` — 静的ファイルを `/out` に書き出す
+### Xcode で開く / iOS ビルド
+「Xcodeで開いて」「xcode」「iOSで確認」等の指示を受けたら、**必ず以下をすべて順番に実行すること**:
+1. `cd frontend && npm run build` — 静的ファイルを `/out` に書き出す（最新のコード変更を反映）
 2. `npx cap sync ios` — Web アセットを iOS プロジェクトにコピー＋Pod install
 3. `open frontend/ios/App/App.xcworkspace` — Xcode を開く
+
+**重要**: コード変更後は必ずステップ1-2を実行してからXcodeビルドすること。`cap sync` を飛ばすと古いビルドがiOSに残る。
 
 ## Architecture
 
@@ -136,3 +138,12 @@ Backend (`.env`): `PORT`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GEMINI_API_KE
 - CSS custom properties for the color palette are defined in `frontend/src/app/globals.css`
 - Word count uses character count (appropriate for Japanese text)
 - Audio codec selection handles iOS compatibility (MP4 > WAV > WebM fallback)
+
+## ツール実行時の許可ルール
+
+  - ツール実行（Bash、ファイル操作など）の許可を求めるときは、必ず日本語で説明・確認を行うこと
+  - 許可を求める際、以下のセキュリティリスクをパーセンテージ(%)で提示すること
+    - パスワードや秘密鍵が外に漏れる可能性
+    - 外部サーバーにデータが送られる可能性
+    - 悪意あるコードが勝手に動く可能性
+    - PCの設定が書き換わる可能性

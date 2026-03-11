@@ -1,5 +1,28 @@
 # Git Worktree Log
 
+## 2026-03-10 (思考の交通整理アプリへの変革)
+- **Branch**: intp-record-specification
+- **Action**: 実装完了（未コミット）
+- **Changes**: Report型3カード構造、質問ライブラリ改修、介入ロジック4トリガー化、QuestionTray、Results 3カード化、Home巨大CTA、Archive新規作成、BottomNav ARCHIVE化
+
+## 2026-03-10 (dead code evacuation + silence fix)
+- **Branch**: simple-record
+- **Action**: commit + push
+- **Commit**: 3871b7d — Evacuate 15 dead code files + fix silence intervention animation
+- **Changes**: 15ファイルを~/Desktop/kataru-evacuated/に避難、api.tsから3関数削除、沈黙介入の初回遅延バグ修正、質問クリア機能追加
+
+## 2026-03-10 (silence gauge)
+- **Branch**: simple-record
+- **Action**: commit + push
+- **Commit**: d055387 Add silence gauge ring around CircularEqualizer for visual intervention feedback
+- **Changes**: SilenceGauge.tsx新規、useAdaptiveInterventionにsilenceProgress追加、record/pageに統合
+
+## 2026-03-10
+- **Branch**: simple-record
+- **Action**: commit + push
+- **Commit**: 73dca12 Adaptive question generation: context-aware 3-tier intervention system
+- **Changes**: useAdaptiveIntervention.ts新規作成、question-library.ts拡張（ナッジ・感情検知・スコアリング）、StimulusPrompt.tsxナッジ表示対応、旧useQuestionIntervention.ts削除
+
 ## 2026-03-09 (brain dump AI questions)
 - **Branch**: main
 - **Action**: commit + push
@@ -65,3 +88,33 @@
 - **Action**: commit + push
 - **Commit**: d0c06cf — Improve App Store submission readiness
 - **Changes**: RevenueCatテストキー警告、Error Boundary追加、PrivacyInfo.xcprivacy API宣言追加、LaunchScreen AutoLayout化、オフラインバナー追加
+
+## 2026-03-09
+- **Branch**: question-generation-brain-dump
+- **Action**: commit + push
+- **Commit**: 23c879c Remove text input mode and simplify record page UI
+- **Changes**: Record画面からテキスト入力モード・ガイダンスボックス削除、ヘッダー簡素化、質問表示をdissolveせず残す
+
+## 2026-03-10
+- **Branch**: question-generation-brain-dump
+- **Action**: commit + push
+- **Commit**: 4a10e7e Hide dialogue feature from UI while preserving code
+- **Changes**: Dialogue機能をUI非表示化（SHOW_DIALOGUEフラグ制御）、pricing/feedbackに近日公開表記追加
+
+## 2026-03-10
+- **Branch**: simple-record
+- **Action**: commit + push
+- **Commit**: 5e9e8b4 Replace API-based question generation with silence-triggered local library
+- **Changes**: useBrainDumpQuestions(API方式)→useQuestionIntervention(沈黙検知+ローカル32問ライブラリ)に完全置換。useSilenceDetectorをref方式に書き換え。
+
+## 2026-03-10
+- **Branch**: simple-record
+- **Action**: commit + push
+- **Commit**: 9240da1 Fix silence detection: use transcript updates instead of audio levels
+- **Changes**: 沈黙検知をAnalyserNode音声レベル→Web Speech API transcript更新停止ベースに変更。雑音環境でも正しく発話停止を検知。
+
+## 2026-03-10
+- **Branch**: simple-record
+- **Action**: commit + push
+- **Commit**: 7f3d8e9 Handle aborted speech recognition error gracefully on iOS
+- **Changes**: iOS WKWebViewのWeb Speech API `aborted`エラーを静かに処理。エラー表示せず録音継続、再起動ループ防止。

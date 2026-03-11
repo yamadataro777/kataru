@@ -1,381 +1,783 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import CircularEqualizer from '@/components/recording/CircularEqualizer';
-import RecordTimer from '@/components/recording/RecordTimer';
-import RecordControls from '@/components/recording/RecordControls';
-import StimulusPrompt from '@/components/recording/StimulusPrompt';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
 import useTranscription from '@/hooks/useTranscription';
-import useSilenceDetector from '@/hooks/useSilenceDetector';
-import useBrainDumpQuestions from '@/hooks/useBrainDumpQuestions';
-import { integrationPrompt } from '@/data/stimulusQuestions';
 import AuthGuard from '@/components/auth/AuthGuard';
+import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
+import {
+  createRoundSession,
+  submitRoundQuestion,
+  submitRoundSummary,
+  updateRoundSession,
+  updateRoundRound,
+  RoundSessionMemory,
+} from '@/lib/api';
 
-type InputMode = 'voice' | 'text';
-type RecordingPhase = 'free' | 'stimulation' | 'integration';
+// --- Types ---
 
-const MIN_RECORDING_SECONDS = 30;
-const STIMULATION_START_SECONDS = 45;
+type Phase = 'idle' | 'recording' | 'analyzing' | 'question' | 'summarizing' | 'summary';
+type QuestionRating = 'forward' | 'neutral' | 'off';
+
+interface RoundResult {
+  roundId: string;
+  transcript: string;
+  mirror: string;
+  question: string;
+  questionRating: QuestionRating | null;
+}
+
+interface SummaryData {
+  blockage: string;
+  key_points: string[];
+  next_step: string;
+}
+
+// --- Constants ---
+
+const ROUND_LABELS = ['外化', '深掘り', '収束'];
+const ROUND_DESCRIPTIONS = [
+  '自由に話してください。頭の中にあることを声に出しましょう。',
+  'AIの問いを受けて、さらに掘り下げてみましょう。',
+  '核心に向かって、考えを絞り込みましょう。',
+];
+const DURATIONS = [60, 90, 120] as const;
+
+// --- Component ---
 
 export default function RecordPage() {
   const router = useRouter();
-  const [inputMode, setInputMode] = useState<InputMode>('voice');
-  const [textInput, setTextInput] = useState('');
-  const [textSubmitting, setTextSubmitting] = useState(false);
-  const [tooShortWarning, setTooShortWarning] = useState(false);
-  const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } = useAudioRecorder();
-  const frequencyData = useAudioVisualizer(analyserNode);
-  const { transcript, interimTranscript, isSupported, error: transcriptionError, startListening, stopListening } = useTranscription();
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   // Phase state
-  const [currentPhase, setCurrentPhase] = useState<RecordingPhase>('free');
-  const [showIntegrationOverlay, setShowIntegrationOverlay] = useState(false);
-  const [integrationQuestion, setIntegrationQuestion] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [roundNumber, setRoundNumber] = useState(1);
+  const [selectedDuration, setSelectedDuration] = useState<number>(90);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // Silence detection — only active during stimulation phase
-  const { silenceTriggered, resetTrigger } = useSilenceDetector(frequencyData, {
-    enabled: inputMode === 'voice' && isRecording && currentPhase === 'stimulation',
-  });
+  // Round data
+  const [rounds, setRounds] = useState<RoundResult[]>([]);
+  const [sessionMemory, setSessionMemory] = useState<RoundSessionMemory | null>(null);
 
-  // AI-powered brain dump questions
+  // Summary
+  const [summary, setSummary] = useState<SummaryData | null>(null);
+  const [sessionRating, setSessionRating] = useState(0);
+
+  // UI state
+  const [error, setError] = useState<string | null>(null);
+
+  // Hooks
+  const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } =
+    useAudioRecorder();
+  const frequencyData = useAudioVisualizer(analyserNode);
   const {
-    activeQuestion,
-    questionVisible,
-    isLoadingQuestion,
-    fetchIntegration,
-  } = useBrainDumpQuestions({
-    silenceTriggered,
-    resetTrigger,
     transcript,
     interimTranscript,
-    frequencyData,
-    elapsedSeconds: duration,
-    phase: currentPhase,
-    isRecording,
+    isSupported,
+    startListening,
+    stopListening,
+  } = useTranscription();
+
+  // Refs
+  const capturedTranscriptRef = useRef('');
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const isAnalyzingRef = useRef(false);
+
+  // Snapshot ref for async operations
+  const stateRef = useRef({
+    sessionId: null as string | null,
+    roundNumber: 1,
+    rounds: [] as RoundResult[],
+    sessionMemory: null as RoundSessionMemory | null,
+    duration: 0,
   });
-
-  // Phase transition: free → stimulation based on duration
   useEffect(() => {
-    if (currentPhase === 'free' && duration >= STIMULATION_START_SECONDS) {
-      setCurrentPhase('stimulation');
-    }
-  }, [duration, currentPhase]);
+    stateRef.current = { sessionId, roundNumber, rounds, sessionMemory, duration };
+  }, [sessionId, roundNumber, rounds, sessionMemory, duration]);
 
-  // Auto-scroll transcript to latest text
+  // Computed
+  const energyLevel = useMemo(() => {
+    if (frequencyData.length === 0) return 0;
+    const activeBins = frequencyData.slice(0, 40);
+    const avg = activeBins.reduce((sum, v) => sum + v, 0) / activeBins.length;
+    return Math.min(1, avg * 2.25);
+  }, [frequencyData]);
+
+  const remaining = Math.max(0, selectedDuration - duration);
+  const countdownMins = Math.floor(remaining / 60)
+    .toString()
+    .padStart(2, '0');
+  const countdownSecs = (remaining % 60).toString().padStart(2, '0');
+  const progress = Math.min(duration / selectedDuration, 1);
+  const currentRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+  const previousRound = roundNumber > 1 && rounds.length >= roundNumber - 1
+    ? rounds[roundNumber - 2]
+    : null;
+
+  // --- Effects ---
+
+  // Auto-scroll transcript
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, interimTranscript]);
 
+  // Start transcription when recording
   useEffect(() => {
-    if (inputMode === 'voice') {
-      setTooShortWarning(false);
-      startRecording();
-    }
-    return () => {
-      stopRecording();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputMode]);
-
-  useEffect(() => {
-    if (inputMode === 'voice' && isRecording && isSupported) {
+    if (isRecording && isSupported) {
       startListening();
     }
     return () => {
       stopListening();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRecording, inputMode]);
-
-  const handleStop = useCallback(() => {
-    // If recording is long enough, show integration overlay
-    if (duration >= STIMULATION_START_SECONDS) {
-      setCurrentPhase('integration');
-      setShowIntegrationOverlay(true);
-      // Fetch AI integration question
-      fetchIntegration().then((q) => {
-        if (q) setIntegrationQuestion(q);
-      });
-      return;
-    }
-    // Short recording — stop immediately
-    stopRecording();
-    stopListening();
-  }, [duration, stopRecording, stopListening, fetchIntegration]);
-
-  const handleIntegrationComplete = useCallback(() => {
-    setShowIntegrationOverlay(false);
-    stopRecording();
-    stopListening();
-  }, [stopRecording, stopListening]);
-
-  useEffect(() => {
-    if (audioBlob && !isRecording) {
-      if (duration < MIN_RECORDING_SECONDS) {
-        setTooShortWarning(true);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        sessionStorage.setItem('kataru_audio', reader.result as string);
-        sessionStorage.setItem('kataru_transcript', transcript);
-        router.push('/processing');
-      };
-      reader.readAsDataURL(audioBlob);
-    }
-  }, [audioBlob, isRecording, duration, transcript, router]);
-
-  // Reset state when re-recording
-  useEffect(() => {
-    if (isRecording) {
-      setCurrentPhase('free');
-      setShowIntegrationOverlay(false);
-      setIntegrationQuestion(null);
-    }
   }, [isRecording]);
 
-  const handleTextSubmit = async () => {
-    if (!textInput.trim()) return;
-    setTextSubmitting(true);
-    sessionStorage.setItem('kataru_transcript', textInput.trim());
-    sessionStorage.removeItem('kataru_audio');
-    router.push('/processing');
-  };
+  // Auto-stop when countdown reaches 0
+  useEffect(() => {
+    if (isRecording && duration >= selectedDuration) {
+      capturedTranscriptRef.current = transcript;
+      stopRecording();
+      stopListening();
+      triggerHaptic('heavy');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRecording, duration, selectedDuration]);
 
-  const charCount = textInput.length;
+  // Detect recording stopped → analyze
+  useEffect(() => {
+    if (audioBlob && !isRecording && phase === 'recording' && !isAnalyzingRef.current) {
+      isAnalyzingRef.current = true;
+      setPhase('analyzing');
+
+      const snap = stateRef.current;
+      const clientTranscript = capturedTranscriptRef.current;
+
+      (async () => {
+        try {
+          const formData = new FormData();
+          formData.append('session_id', snap.sessionId!);
+          formData.append('round_number', String(snap.roundNumber));
+          formData.append('duration_sec', String(snap.duration));
+          formData.append(
+            'previous_questions',
+            JSON.stringify(snap.rounds.map((r) => r.question)),
+          );
+          formData.append('session_memory', JSON.stringify(snap.sessionMemory || {}));
+
+          if (clientTranscript && clientTranscript.length > 0) {
+            formData.append('transcript', clientTranscript);
+          } else {
+            const ext = audioBlob.type.includes('mp4')
+              ? 'mp4'
+              : audioBlob.type.includes('wav')
+                ? 'wav'
+                : 'webm';
+            formData.append('audio', audioBlob, `recording.${ext}`);
+          }
+
+          const result = await submitRoundQuestion(formData);
+
+          setRounds((prev) => [
+            ...prev,
+            {
+              roundId: result.round_id,
+              transcript: result.transcript,
+              mirror: result.mirror,
+              question: result.question,
+              questionRating: null,
+            },
+          ]);
+          setSessionMemory(result.memory);
+          setPhase('question');
+          triggerHaptic('medium');
+        } catch (err) {
+          setError(err instanceof Error ? err.message : '分析に失敗しました');
+          setPhase('idle');
+          isAnalyzingRef.current = false;
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioBlob, isRecording, phase]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopRecording();
+      stopListening();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Actions ---
+
+  const handleStartRound = useCallback(async () => {
+    setError(null);
+
+    try {
+      let sid = sessionId;
+      if (roundNumber === 1) {
+        const session = await createRoundSession(selectedDuration);
+        sid = session.id;
+        setSessionId(sid);
+        // Update ref immediately for async use
+        stateRef.current.sessionId = sid;
+      }
+
+      isAnalyzingRef.current = false;
+      setPhase('recording');
+      await startRecording();
+      triggerHaptic('medium');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'セッション作成に失敗しました');
+    }
+  }, [sessionId, roundNumber, selectedDuration, startRecording]);
+
+  const handleStopRecording = useCallback(() => {
+    capturedTranscriptRef.current = transcript;
+    stopRecording();
+    stopListening();
+    triggerHaptic('heavy');
+  }, [transcript, stopRecording, stopListening]);
+
+  const handleRateQuestion = useCallback(
+    (rating: QuestionRating) => {
+      setRounds((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { ...updated[updated.length - 1], questionRating: rating };
+        return updated;
+      });
+
+      const round = rounds[rounds.length - 1];
+      if (round) {
+        updateRoundRound(round.roundId, rating).catch(console.error);
+      }
+    },
+    [rounds],
+  );
+
+  const handleNextRound = useCallback(() => {
+    if (roundNumber >= 3) {
+      handleGenerateSummary();
+    } else {
+      setRoundNumber((prev) => prev + 1);
+      setPhase('idle');
+      isAnalyzingRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roundNumber]);
+
+  const handleGenerateSummary = useCallback(async () => {
+    setPhase('summarizing');
+    setError(null);
+
+    try {
+      const snap = stateRef.current;
+      const result = await submitRoundSummary({
+        session_id: snap.sessionId!,
+        round3_transcript: snap.rounds[snap.rounds.length - 1]?.transcript || '',
+        mirrors: snap.rounds.map((r) => r.mirror),
+        questions: snap.rounds.map((r) => r.question),
+        session_memory: snap.sessionMemory,
+      });
+
+      setSummary({
+        blockage: result.blockage,
+        key_points: result.key_points,
+        next_step: result.next_step,
+      });
+      setPhase('summary');
+      triggerHaptic('heavy');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'まとめ生成に失敗しました');
+      setPhase('summary');
+    }
+  }, []);
+
+  const handleRateSession = useCallback(
+    (rating: number) => {
+      setSessionRating(rating);
+      if (sessionId) {
+        updateRoundSession(sessionId, { session_rating: rating }).catch(console.error);
+      }
+    },
+    [sessionId],
+  );
+
+  // --- Render helpers ---
+
+  const bgCyan = phase === 'recording' ? 0.14 + energyLevel * 0.26 : 0.08;
+  const bgMagenta = phase === 'recording' ? 0.11 + energyLevel * 0.2 : 0.06;
 
   return (
     <AuthGuard>
-      <div className="flex flex-col min-h-dvh">
+      <div
+        className="flex flex-col min-h-dvh relative overflow-hidden"
+        style={{
+          background: `
+            radial-gradient(circle at 50% 38%, rgba(0,212,255,${bgCyan}), transparent 42%),
+            radial-gradient(circle at 72% 72%, rgba(255,59,122,${bgMagenta}), transparent 46%),
+            linear-gradient(180deg, #050810 0%, #0A1020 100%)
+          `,
+        }}
+      >
         {/* Header */}
-        <div className="px-5 py-3 flex-shrink-0">
-          <div className="flex items-center justify-between mb-2">
+        <div className="px-5 py-3 flex-shrink-0 relative z-10">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{
-                  background: inputMode === 'voice' ? 'var(--neon-magenta)' : 'var(--neon-cyan)',
-                  boxShadow: inputMode === 'voice' ? '0 0 8px var(--neon-magenta)' : '0 0 8px var(--neon-cyan)',
-                  animation: inputMode === 'voice' ? 'rec-pulse 1.5s ease infinite' : 'none',
-                }}
-              />
-              <span
-                className="text-[10px] tracking-[2px] uppercase"
-                style={{ color: inputMode === 'voice' ? 'var(--neon-magenta)' : 'var(--neon-cyan)' }}
-              >
-                {inputMode === 'voice' ? 'RECORDING' : 'TEXT INPUT'}
+              {phase === 'recording' && (
+                <>
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{
+                      background: 'var(--neon-magenta)',
+                      boxShadow: '0 0 8px var(--neon-magenta)',
+                      animation: 'rec-pulse 1.5s ease infinite',
+                    }}
+                  />
+                  <span
+                    className="text-[10px] tracking-[2px] uppercase"
+                    style={{ color: 'var(--neon-magenta)' }}
+                  >
+                    REC
+                  </span>
+                </>
+              )}
+              <span className="text-[10px] tracking-[2px] text-neon-cyan opacity-75">
+                ROUND {roundNumber} / 3 — {ROUND_LABELS[roundNumber - 1]}
               </span>
             </div>
-            <button
-              onClick={() => router.push('/')}
-              className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer flex items-center gap-1"
-            >
-              <span>&larr;</span> BACK
-            </button>
-          </div>
-
-          {/* Mode Toggle */}
-          <div className="flex gap-1">
-            {(['voice', 'text'] as InputMode[]).map((mode) => (
+            {(phase === 'idle' || phase === 'summary') && (
               <button
-                key={mode}
-                onClick={() => setInputMode(mode)}
-                className="flex-1 text-[9px] font-bold tracking-[2px] py-1.5 cursor-pointer transition-all rounded"
-                style={{
-                  color: inputMode === mode ? (mode === 'voice' ? 'var(--neon-magenta)' : 'var(--neon-cyan)') : 'rgba(232,237,245,0.3)',
-                  background: inputMode === mode ? (mode === 'voice' ? 'rgba(255,59,122,0.08)' : 'rgba(0,212,255,0.08)') : 'transparent',
-                  border: inputMode === mode ? `1px solid ${mode === 'voice' ? 'rgba(255,59,122,0.3)' : 'rgba(0,212,255,0.3)'}` : '1px solid transparent',
-                }}
+                onClick={() => router.push('/')}
+                className="text-[9px] tracking-[2px] text-neon-cyan bg-transparent border-0 cursor-pointer flex items-center gap-1"
               >
-                {mode === 'voice' ? 'VOICE' : 'TEXT'}
+                <span>&larr;</span> BACK
               </button>
-            ))}
+            )}
           </div>
         </div>
 
-        {inputMode === 'voice' ? (
-          <>
-            {/* Recording Guidance */}
-            <div className="px-5 flex-shrink-0">
-              <div className="rounded border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.03)] px-4 py-3">
-                <p className="text-[10px] tracking-[1px] leading-5 text-hud-white opacity-60">
-                  今抱えている判断や悩みについて、自由に話してみてください
-                </p>
-                <p className="text-[9px] tracking-[1px] text-neon-cyan opacity-40 mt-1">
-                  3〜5分がおすすめです
-                </p>
-              </div>
-            </div>
+        {/* Round progress dots */}
+        <div className="flex justify-center gap-2 pb-2 relative z-10">
+          {[1, 2, 3].map((r) => (
+            <div
+              key={r}
+              className="w-2 h-2 rounded-full transition-all duration-300"
+              style={{
+                background:
+                  r < roundNumber
+                    ? 'var(--neon-lime)'
+                    : r === roundNumber
+                      ? 'var(--neon-cyan)'
+                      : 'rgba(255,255,255,0.15)',
+                boxShadow:
+                  r <= roundNumber
+                    ? `0 0 6px ${r < roundNumber ? 'var(--neon-lime)' : 'var(--neon-cyan)'}`
+                    : 'none',
+              }}
+            />
+          ))}
+        </div>
 
-            {/* Equalizer */}
+        {/* Main content */}
+        <div className="flex-1 flex flex-col relative z-10 px-5">
+          {/* ========== IDLE PHASE ========== */}
+          {phase === 'idle' && (
             <div className="flex-1 flex flex-col items-center justify-center gap-6">
-              <CircularEqualizer frequencyData={frequencyData} size={240} />
-              <RecordTimer seconds={duration} />
-            </div>
-
-            {/* Transcript */}
-            <div className="px-5 mb-4 max-h-32 overflow-y-auto" style={{ scrollBehavior: 'smooth' }}>
-              {transcriptionError ? (
-                <p className="text-xs text-neon-lime opacity-70 tracking-wide text-center">
-                  {transcriptionError}
-                </p>
-              ) : (transcript || interimTranscript) ? (
-                <p className="text-xs leading-6 text-hud-white opacity-80 tracking-wide">
-                  {transcript}
-                  {interimTranscript && (
-                    <span className="text-neon-cyan opacity-60">{interimTranscript}</span>
-                  )}
-                  <span ref={transcriptEndRef} />
-                </p>
-              ) : (
-                <p className="text-xs text-hud-white-dim tracking-[2px] text-center">
-                  {isSupported ? 'Listening...' : 'Speech recognition not available in this browser'}
-                </p>
+              {/* Previous round question context */}
+              {previousRound && (
+                <GlassCard variant="cyan" className="w-full p-4">
+                  <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-2">
+                    ROUND {roundNumber - 1} の問い
+                  </p>
+                  <p className="text-sm text-hud-white leading-relaxed">
+                    {previousRound.question}
+                  </p>
+                </GlassCard>
               )}
-            </div>
 
-            {/* Stimulus Question */}
-            <StimulusPrompt question={activeQuestion} visible={questionVisible} loading={isLoadingQuestion} />
-
-            {/* Too short warning */}
-            {tooShortWarning && (
-              <div className="px-5 mb-4 flex flex-col items-center gap-3">
-                <p className="text-xs text-neon-magenta tracking-[1px] text-center">
-                  30秒以上録音してください
-                </p>
-                <NeonButton
-                  onClick={() => {
-                    setTooShortWarning(false);
-                    startRecording();
-                    if (isSupported) startListening();
-                  }}
-                  className="w-full"
+              {/* Round description */}
+              <div className="text-center">
+                <h2
+                  className="text-lg font-bold text-neon-cyan tracking-wider mb-2"
+                  style={{ textShadow: '0 0 14px rgba(0, 212, 255, 0.45)' }}
                 >
-                  もう一度録音する
-                </NeonButton>
+                  Round {roundNumber}: {ROUND_LABELS[roundNumber - 1]}
+                </h2>
+                <p className="text-xs text-hud-white opacity-60 leading-relaxed">
+                  {ROUND_DESCRIPTIONS[roundNumber - 1]}
+                </p>
               </div>
-            )}
 
-            {/* Controls */}
-            <div className="pb-8 px-5">
-              {!tooShortWarning && (
-                <RecordControls onStop={handleStop} isRecording={isRecording} />
+              {/* Duration selector (R1 only) */}
+              {roundNumber === 1 && (
+                <div className="flex gap-3">
+                  {DURATIONS.map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setSelectedDuration(d)}
+                      className={`
+                        px-4 py-2 rounded-lg border font-mono text-sm tracking-wider
+                        transition-all duration-200 cursor-pointer
+                        ${
+                          selectedDuration === d
+                            ? 'border-neon-cyan text-neon-cyan bg-[rgba(0,212,255,0.12)]'
+                            : 'border-[rgba(255,255,255,0.1)] text-hud-white-dim bg-transparent'
+                        }
+                      `}
+                      style={
+                        selectedDuration === d
+                          ? { boxShadow: '0 0 12px rgba(0,212,255,0.3)' }
+                          : undefined
+                      }
+                    >
+                      {d}秒
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Start button */}
+              <NeonButton onClick={handleStartRound} variant="cyan">
+                {roundNumber === 1 ? '始める' : '次のラウンドを始める'}
+              </NeonButton>
+
+              {/* Error */}
+              {error && (
+                <p className="text-xs text-neon-magenta text-center">{error}</p>
               )}
             </div>
+          )}
 
-            {/* Integration Overlay */}
-            {showIntegrationOverlay && (
-              <div
-                className="fixed inset-0 z-50 flex flex-col items-center justify-center px-8"
-                style={{ background: 'rgba(10,14,26,0.85)' }}
-              >
+          {/* ========== RECORDING PHASE ========== */}
+          {phase === 'recording' && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              {/* Equalizer */}
+              <div className="relative" style={{ width: 240, height: 240 }}>
+                <CircularEqualizer
+                  frequencyData={frequencyData}
+                  size={240}
+                  rotationDeg={duration * 0.65}
+                  energy={energyLevel}
+                />
+              </div>
+
+              {/* Countdown timer */}
+              <div className="flex flex-col items-center gap-1">
                 <div
-                  className="rounded-lg px-6 py-8 w-full max-w-sm text-center"
+                  className="text-[28px] font-bold tracking-[6px] font-mono"
                   style={{
-                    background: 'rgba(16,22,42,0.9)',
-                    border: '1px solid var(--glass-border)',
+                    color:
+                      remaining <= 10
+                        ? 'var(--neon-magenta)'
+                        : 'var(--neon-cyan)',
+                    textShadow:
+                      remaining <= 10
+                        ? '0 0 14px rgba(255,59,122,0.5)'
+                        : '0 0 14px rgba(0,212,255,0.45)',
                   }}
                 >
-                  <p
-                    className="text-[10px] tracking-[2px] mb-6"
-                    style={{ color: 'var(--neon-cyan)', opacity: 0.6 }}
-                  >
-                    INTEGRATION
-                  </p>
-                  <p
-                    className="text-sm tracking-[1px] leading-7 mb-8"
+                  {countdownMins}:{countdownSecs}
+                </div>
+                {/* Progress bar */}
+                <div className="w-48 h-[2px] bg-[rgba(255,255,255,0.08)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-1000 ease-linear"
                     style={{
-                      color: 'var(--neon-lime)',
-                      textShadow: '0 0 12px rgba(168,255,0,0.3)',
+                      width: `${progress * 100}%`,
+                      background: 'linear-gradient(90deg, var(--neon-cyan), var(--neon-magenta))',
                     }}
-                  >
-                    {integrationQuestion || integrationPrompt}
-                  </p>
-                  <p
-                    className="text-[9px] tracking-[1px] mb-6"
-                    style={{ color: 'var(--hud-white)', opacity: 0.4 }}
-                  >
-                    録音は続いています。声に出して答えてみてください。
-                  </p>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={handleIntegrationComplete}
-                      className="flex-1 py-3 rounded text-[10px] tracking-[2px] cursor-pointer"
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid rgba(232,237,245,0.2)',
-                        color: 'rgba(232,237,245,0.5)',
-                      }}
-                    >
-                      SKIP
-                    </button>
-                    <button
-                      onClick={handleIntegrationComplete}
-                      className="flex-1 py-3 rounded text-[10px] tracking-[2px] cursor-pointer"
-                      style={{
-                        background: 'rgba(0,212,255,0.1)',
-                        border: '1px solid rgba(0,212,255,0.4)',
-                        color: 'var(--neon-cyan)',
-                      }}
-                    >
-                      DONE
-                    </button>
-                  </div>
+                  />
                 </div>
               </div>
-            )}
-          </>
-        ) : (
-          <>
-            {/* Text Input Mode */}
-            <div className="px-5 mt-2 flex-shrink-0">
-              <div className="rounded border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.03)] px-4 py-3">
-                <p className="text-[10px] tracking-[1px] leading-5 text-hud-white opacity-60">
-                  考えていることをテキストで入力してください。
-                  声を出せない環境でもKataruをお使いいただけます。
-                </p>
-              </div>
-            </div>
 
-            <div className="flex-1 flex flex-col px-5 mt-4">
-              <textarea
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="今抱えている判断や悩みについて、自由に書いてみてください..."
-                className="flex-1 min-h-[300px] bg-[rgba(0,212,255,0.03)] border border-[rgba(0,212,255,0.15)] rounded-lg p-4 text-sm text-hud-white placeholder:text-hud-white-dim tracking-wide leading-7 resize-none focus:outline-none focus:border-[rgba(0,212,255,0.4)]"
-              />
-              <div className="flex items-center justify-between mt-2 mb-4">
-                <span className="text-[9px] text-hud-white-dim tracking-[1px]">
-                  {charCount} 文字
-                </span>
-                <span className="text-[9px] text-neon-cyan opacity-40 tracking-[1px]">
-                  200文字以上がおすすめです
-                </span>
-              </div>
-            </div>
-
-            <div className="px-5 pb-8">
-              <NeonButton
-                onClick={handleTextSubmit}
-                disabled={charCount < 50 || textSubmitting}
-                className="w-full"
+              {/* Transcript */}
+              <div
+                className="w-full max-h-28 overflow-y-auto mt-2"
+                style={{
+                  scrollBehavior: 'smooth',
+                  maskImage: 'linear-gradient(to top, black 72%, transparent 100%)',
+                }}
               >
-                {textSubmitting ? 'PROCESSING...' : 'ANALYZE'}
-              </NeonButton>
-              {charCount > 0 && charCount < 50 && (
-                <p className="text-[9px] text-neon-magenta opacity-60 text-center mt-2 tracking-[1px]">
-                  50文字以上入力してください
+                {transcript || interimTranscript ? (
+                  <p className="text-xs leading-6 text-hud-white opacity-80 tracking-wide">
+                    {transcript}
+                    {interimTranscript && (
+                      <span className="text-neon-cyan opacity-60">{interimTranscript}</span>
+                    )}
+                    <span ref={transcriptEndRef} />
+                  </p>
+                ) : (
+                  <p className="text-xs text-hud-white-dim tracking-[2px] text-center">
+                    {isSupported ? 'Listening...' : '文字起こしは自動で行います'}
+                  </p>
+                )}
+              </div>
+
+              {/* Stop button */}
+              <div className="flex flex-col items-center gap-2 mt-2">
+                <div
+                  className="w-[80px] h-[80px] rounded-full p-[2px]"
+                  style={{
+                    background: `conic-gradient(rgba(0,212,255,0.95) ${progress * 360}deg, rgba(255,59,122,0.25) ${progress * 360}deg 360deg)`,
+                    boxShadow:
+                      '0 0 18px rgba(0,212,255,0.3), 0 0 36px rgba(255,59,122,0.2)',
+                  }}
+                >
+                  <button
+                    onClick={handleStopRecording}
+                    className="w-full h-full rounded-full border border-neon-magenta/60 bg-[rgba(12,16,34,0.96)] flex items-center justify-center cursor-pointer transition-all duration-200 active:scale-95"
+                    style={{
+                      boxShadow: 'inset 0 0 18px rgba(255,59,122,0.3)',
+                      animation: 'pulse 1.2s ease infinite',
+                    }}
+                  >
+                    <svg
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="var(--neon-magenta)"
+                    >
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-[10px] tracking-[1.8px] text-hud-white-dim">
+                  タップで早期終了
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* ========== ANALYZING PHASE ========== */}
+          {phase === 'analyzing' && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-6">
+              <div
+                className="w-16 h-16 rounded-full border-2 border-neon-cyan"
+                style={{
+                  borderTopColor: 'transparent',
+                  animation: 'spin 1s linear infinite',
+                  boxShadow: '0 0 20px rgba(0,212,255,0.3)',
+                }}
+              />
+              <p className="text-sm text-neon-cyan tracking-[3px]">AI分析中...</p>
+              <p className="text-[10px] text-hud-white-dim tracking-wide">
+                あなたの話を理解しています
+              </p>
+            </div>
+          )}
+
+          {/* ========== QUESTION PHASE ========== */}
+          {phase === 'question' && currentRound && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-5">
+              {/* Mirror */}
+              <GlassCard variant="cyan" className="w-full p-4">
+                <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-2">
+                  理解ミラー
+                </p>
+                <p className="text-sm text-hud-white leading-relaxed">
+                  {currentRound.mirror}
+                </p>
+              </GlassCard>
+
+              {/* Question */}
+              <GlassCard variant="magenta" className="w-full p-4">
+                <p className="text-[10px] tracking-[2px] text-neon-magenta opacity-60 mb-2">
+                  問い
+                </p>
+                <p
+                  className="text-base text-hud-white leading-relaxed font-medium"
+                  style={{ textShadow: '0 0 20px rgba(255,59,122,0.15)' }}
+                >
+                  {currentRound.question}
+                </p>
+              </GlassCard>
+
+              {/* Rating buttons */}
+              <div className="w-full">
+                <p className="text-[10px] tracking-[2px] text-hud-white-dim text-center mb-3">
+                  この問いはどうでしたか？
+                </p>
+                <div className="flex gap-2">
+                  {([
+                    { key: 'forward' as QuestionRating, label: '話しやすくなった', variant: 'lime' },
+                    { key: 'neutral' as QuestionRating, label: 'どちらでもない', variant: 'cyan' },
+                    { key: 'off' as QuestionRating, label: 'ズレていた', variant: 'magenta' },
+                  ] as const).map(({ key, label, variant }) => (
+                    <button
+                      key={key}
+                      onClick={() => handleRateQuestion(key)}
+                      className={`
+                        flex-1 py-3 rounded-lg border text-[11px] tracking-wider
+                        transition-all duration-200 cursor-pointer
+                        ${
+                          currentRound.questionRating === key
+                            ? `border-neon-${variant} text-neon-${variant} bg-[rgba(${variant === 'lime' ? '168,255,0' : variant === 'cyan' ? '0,212,255' : '255,59,122'},0.15)]`
+                            : 'border-[rgba(255,255,255,0.1)] text-hud-white-dim bg-transparent'
+                        }
+                      `}
+                      style={
+                        currentRound.questionRating === key
+                          ? {
+                              boxShadow: `0 0 10px rgba(${variant === 'lime' ? '168,255,0' : variant === 'cyan' ? '0,212,255' : '255,59,122'},0.3)`,
+                            }
+                          : undefined
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Next button */}
+              {currentRound.questionRating && (
+                <NeonButton
+                  onClick={handleNextRound}
+                  variant={roundNumber >= 3 ? 'lime' : 'cyan'}
+                >
+                  {roundNumber >= 3 ? 'セッションをまとめる' : '次のラウンドへ'}
+                </NeonButton>
               )}
             </div>
-          </>
-        )}
+          )}
+
+          {/* ========== SUMMARIZING PHASE ========== */}
+          {phase === 'summarizing' && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-6">
+              <div
+                className="w-16 h-16 rounded-full border-2 border-neon-lime"
+                style={{
+                  borderTopColor: 'transparent',
+                  animation: 'spin 1s linear infinite',
+                  boxShadow: '0 0 20px rgba(168,255,0,0.3)',
+                }}
+              />
+              <p className="text-sm text-neon-lime tracking-[3px]">
+                セッションまとめを生成中...
+              </p>
+            </div>
+          )}
+
+          {/* ========== SUMMARY PHASE ========== */}
+          {phase === 'summary' && (
+            <div className="flex-1 flex flex-col gap-5 py-4 overflow-y-auto">
+              <h2
+                className="text-center text-lg font-bold text-neon-lime tracking-[4px]"
+                style={{ textShadow: '0 0 14px rgba(168,255,0,0.45)' }}
+              >
+                SESSION COMPLETE
+              </h2>
+
+              {summary ? (
+                <>
+                  {/* Blockage */}
+                  <GlassCard variant="magenta" className="p-4">
+                    <p className="text-[10px] tracking-[2px] text-neon-magenta opacity-60 mb-2">
+                      今回の詰まり
+                    </p>
+                    <p className="text-sm text-hud-white leading-relaxed">
+                      {summary.blockage}
+                    </p>
+                  </GlassCard>
+
+                  {/* Key points */}
+                  <GlassCard variant="cyan" className="p-4">
+                    <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-2">
+                      重要論点
+                    </p>
+                    <ul className="space-y-2">
+                      {summary.key_points.map((point, i) => (
+                        <li
+                          key={i}
+                          className="text-sm text-hud-white leading-relaxed flex items-start gap-2"
+                        >
+                          <span className="text-neon-cyan opacity-50 mt-0.5">
+                            {i + 1}.
+                          </span>
+                          {point}
+                        </li>
+                      ))}
+                    </ul>
+                  </GlassCard>
+
+                  {/* Next step */}
+                  <GlassCard variant="lime" className="p-4">
+                    <p className="text-[10px] tracking-[2px] text-neon-lime opacity-60 mb-2">
+                      次の一歩
+                    </p>
+                    <p className="text-sm text-hud-white leading-relaxed font-medium">
+                      {summary.next_step}
+                    </p>
+                  </GlassCard>
+                </>
+              ) : (
+                error && (
+                  <GlassCard variant="magenta" className="p-4">
+                    <p className="text-sm text-neon-magenta">{error}</p>
+                  </GlassCard>
+                )
+              )}
+
+              {/* Session rating */}
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-[10px] tracking-[2px] text-hud-white-dim">
+                  このセッションの評価
+                </p>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => handleRateSession(star)}
+                      className="text-2xl cursor-pointer bg-transparent border-0 transition-transform duration-150 active:scale-110"
+                      style={{
+                        color:
+                          star <= sessionRating
+                            ? 'var(--neon-lime)'
+                            : 'rgba(255,255,255,0.15)',
+                        textShadow:
+                          star <= sessionRating
+                            ? '0 0 10px rgba(168,255,0,0.5)'
+                            : 'none',
+                      }}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Back to home */}
+              <div className="pb-4">
+                <NeonButton onClick={() => router.push('/')} variant="cyan" className="w-full">
+                  ホームへ
+                </NeonButton>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </AuthGuard>
   );
+}
+
+// Haptic feedback (iOS only)
+async function triggerHaptic(style: 'light' | 'medium' | 'heavy') {
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (!Capacitor.isNativePlatform()) return;
+    const { Haptics, ImpactStyle } = await import('@capacitor/haptics');
+    const impactMap = {
+      light: ImpactStyle.Light,
+      medium: ImpactStyle.Medium,
+      heavy: ImpactStyle.Heavy,
+    };
+    await Haptics.impact({ style: impactMap[style] });
+  } catch {
+    // Haptics not available
+  }
 }

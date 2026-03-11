@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brain Dump 30s Rhythm Test</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0A0E1A;
+    color: #E8EDF5;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+
+  /* Controls Panel */
+  .controls {
+    background: rgba(0,212,255,0.05);
+    border-bottom: 1px solid rgba(0,212,255,0.2);
+    padding: 12px 16px;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .controls button {
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.3);
+    color: #00D4FF;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+  .controls button:hover { background: rgba(0,212,255,0.2); }
+  .controls button.active { background: rgba(0,212,255,0.3); border-color: #00D4FF; }
+  .controls button.danger { border-color: rgba(255,59,122,0.4); color: #FF3B7A; background: rgba(255,59,122,0.1); }
+  .controls button.danger:hover { background: rgba(255,59,122,0.2); }
+  .controls button.success { border-color: rgba(168,255,0,0.4); color: #A8FF00; background: rgba(168,255,0,0.1); }
+  .speed-label { font-size: 10px; color: rgba(232,237,245,0.4); letter-spacing: 2px; }
+
+  /* Header */
+  .header {
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .rec-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #FF3B7A;
+    box-shadow: 0 0 8px #FF3B7A;
+    animation: rec-pulse 1.5s ease infinite;
+  }
+  .rec-dot.stopped { background: #555; box-shadow: none; animation: none; }
+  .header-text { font-size: 10px; letter-spacing: 2px; color: #FF3B7A; }
+  .header-text.stopped { color: #555; }
+
+  /* Guidance */
+  .guidance {
+    margin: 0 20px;
+    padding: 12px 16px;
+    border: 1px solid rgba(0,212,255,0.15);
+    background: rgba(0,212,255,0.03);
+    border-radius: 4px;
+  }
+  .guidance p { font-size: 10px; letter-spacing: 1px; line-height: 1.8; color: rgba(232,237,245,0.6); }
+  .guidance .sub { font-size: 9px; color: rgba(0,212,255,0.4); margin-top: 4px; }
+
+  /* Equalizer area */
+  .eq-area {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    padding: 20px;
+  }
+  .eq-container { position: relative; }
+  canvas#eq { display: block; }
+
+  /* Timer */
+  .timer {
+    font-size: 20px; font-weight: bold;
+    letter-spacing: 4px; color: #00D4FF;
+    opacity: 0.6;
+    text-shadow: 0 0 10px rgba(0,212,255,0.3);
+  }
+
+  /* Question */
+  .question-area { height: 48px; display: flex; align-items: center; justify-content: center; padding: 0 20px; }
+  .question-text {
+    font-size: 12px; letter-spacing: 1.5px;
+    text-align: center;
+    text-shadow: 0 0 12px rgba(168,255,0,0.3);
+    color: #A8FF00;
+    transition: opacity 0.5s ease-out;
+  }
+  .question-text.integration { color: #00D4FF; text-shadow: 0 0 12px rgba(0,212,255,0.3); }
+  .question-text.dissolving { opacity: 0; }
+
+  /* Transcript */
+  .transcript {
+    padding: 0 20px; margin-bottom: 16px;
+    max-height: 120px; overflow-y: auto;
+    font-size: 12px; line-height: 2;
+    color: rgba(232,237,245,0.8); letter-spacing: 0.5px;
+  }
+
+  /* Integration buttons */
+  .integration-btns {
+    display: flex; gap: 12px; justify-content: center;
+    padding: 0 20px; margin-bottom: 16px;
+  }
+  .integration-btns .note { font-size: 9px; color: rgba(232,237,245,0.3); letter-spacing: 1px; text-align: center; width: 100%; margin-bottom: 8px; }
+  .integration-btns button {
+    padding: 8px 24px; border-radius: 4px;
+    font-size: 9px; letter-spacing: 2px; cursor: pointer; font-family: inherit;
+  }
+  .btn-skip { background: transparent; border: 1px solid rgba(232,237,245,0.2); color: rgba(232,237,245,0.5); }
+  .btn-done { background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.4); color: #00D4FF; }
+
+  /* Stop button */
+  .stop-area { padding: 0 20px 32px; display: flex; justify-content: center; }
+  .stop-btn {
+    width: 64px; height: 64px; border-radius: 50%;
+    border: 2px solid #FF3B7A;
+    background: rgba(255,59,122,0.1);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(255,59,122,0.3), 0 0 40px rgba(255,59,122,0.15);
+    animation: pulse 2s ease infinite;
+  }
+  .stop-btn svg { fill: #FF3B7A; }
+
+  /* Event log */
+  .log-panel {
+    background: rgba(16,22,42,0.9);
+    border-top: 1px solid rgba(0,212,255,0.2);
+    max-height: 200px; overflow-y: auto;
+    padding: 8px 16px;
+  }
+  .log-entry {
+    font-size: 9px; letter-spacing: 0.5px;
+    padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+    display: flex; gap: 8px;
+  }
+  .log-time { color: rgba(0,212,255,0.5); min-width: 50px; }
+  .log-event { color: rgba(232,237,245,0.6); }
+  .log-event.prefetch { color: rgba(168,255,0,0.6); }
+  .log-event.display { color: #A8FF00; }
+  .log-event.integration { color: #00D4FF; }
+  .log-event.error { color: #FF3B7A; }
+
+  /* Timeline bar */
+  .timeline {
+    height: 24px; background: rgba(0,0,0,0.3);
+    margin: 0 20px; border-radius: 4px;
+    position: relative; overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .timeline-fill {
+    height: 100%; background: rgba(0,212,255,0.1);
+    border-right: 2px solid rgba(0,212,255,0.4);
+    transition: width 0.1s linear;
+  }
+  .timeline-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+  .timeline-marker {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: rgba(168,255,0,0.3);
+  }
+  .timeline-marker::after {
+    content: attr(data-label);
+    position: absolute; top: 2px; left: 3px;
+    font-size: 7px; color: rgba(168,255,0,0.4); white-space: nowrap;
+  }
+  .timeline-prefetch {
+    position: absolute; top: 0; bottom: 0; width: 1px;
+    background: rgba(255,59,122,0.3);
+  }
+
+  @keyframes rec-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); }
+  }
+</style>
+</head>
+<body>
+
+<!-- Test Controls -->
+<div class="controls">
+  <span class="speed-label">SPEED</span>
+  <button onclick="setSpeed(1)" id="sp1" class="active">1x</button>
+  <button onclick="setSpeed(3)" id="sp3">3x</button>
+  <button onclick="setSpeed(5)" id="sp5">5x</button>
+  <button onclick="setSpeed(10)" id="sp10">10x</button>
+  <button onclick="setSpeed(30)" id="sp30">30x</button>
+  <button onclick="toggleRecording()" id="recToggle" class="success">START</button>
+  <button onclick="resetAll()" class="danger">RESET</button>
+  <button onclick="toggleLog()" style="margin-left:auto">LOG</button>
+</div>
+
+<!-- Timeline -->
+<div class="timeline" id="timeline">
+  <div class="timeline-fill" id="timelineFill"></div>
+  <div class="timeline-markers" id="timelineMarkers"></div>
+</div>
+
+<!-- App UI -->
+<div class="header">
+  <div class="rec-dot" id="recDot"></div>
+  <span class="header-text" id="headerText">RECORDING</span>
+</div>
+
+<div class="guidance">
+  <p>今抱えている判断や悩みについて、自由に話してみてください</p>
+  <p class="sub">3〜5分がおすすめです</p>
+</div>
+
+<div class="eq-area">
+  <div class="eq-container">
+    <canvas id="eq" width="480" height="480" style="width:240px;height:240px"></canvas>
+  </div>
+  <div class="timer" id="timer">00:00</div>
+  <div class="question-area" id="questionArea"></div>
+</div>
+
+<div class="transcript" id="transcript"></div>
+
+<div id="integrationBtns" style="display:none">
+  <div class="integration-btns" style="flex-wrap:wrap">
+    <span class="note">声に出して答えてみてください</span>
+    <button class="btn-skip" onclick="finishIntegration()">SKIP</button>
+    <button class="btn-done" onclick="finishIntegration()">DONE</button>
+  </div>
+</div>
+
+<div class="stop-area" id="stopArea">
+  <div class="stop-btn" onclick="handleStop()">
+    <svg width="24" height="24" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+  </div>
+</div>
+
+<!-- Event Log -->
+<div class="log-panel" id="logPanel" style="display:none"></div>
+
+<script>
+// === State ===
+let isRecording = false;
+let duration = 0;
+let speed = 1;
+let timerInterval = null;
+let rotationDeg = 0;
+let barHeightMult = 1.0;
+
+// Question state
+let activeQuestion = null;
+let questionPhase = null; // 'typing' | 'hold' | 'dissolve' | null
+let prefetchedQuestion = null;
+let isPrefetching = false;
+let isIntegrating = false;
+let questionsShown = [];
+let questionCount = 0;
+let typingProgress = 0;
+let typingRaf = null;
+
+// Mock transcript
+const mockSentences = [
+  '最近仕事のことでずっと考えていて、',
+  '特にチームのマネジメントが難しいなと感じている。',
+  'メンバーそれぞれのモチベーションが違うし、',
+  '自分がどこまで介入すべきかわからない。',
+  '前の会社ではもっとフラットだったけど、',
+  '今は責任の重さが違う気がする。',
+  'でも一方で、この挑戦を楽しんでいる自分もいて、',
+  'その矛盾がちょっと不思議な感覚。',
+  '結局何を優先すべきなのか、まだ整理できていない。',
+  '時間が経てば自然と見えてくるのかもしれないけど、',
+  '今この瞬間にもう少しクリアにしたい気持ちもある。',
+  'でもそれって焦りなのかもしれない。',
+];
+let transcriptText = '';
+let sentenceIndex = 0;
+let lastTranscriptUpdate = 0;
+
+// Mock questions (simulating AI responses)
+const mockQuestions = [
+  '一番避けている判断は何？',
+  'そのチームに何を期待してる？',
+  '3ヶ月後、どうなっていたい？',
+  '誰に相談したいと思ってる？',
+  'その矛盾、本当に矛盾？',
+  '楽しさの正体は何だろう？',
+  'もし失敗しても大丈夫なら？',
+  '前の自分ならどう判断した？',
+  'その責任感、誰から来てる？',
+  '一番シンプルな選択肢は？',
+];
+
+// Static fallback questions
+const staticQuestions = [
+  '他には？',
+  '今、頭の中でいちばん輪郭がないものは？',
+  'もう少し続けると？',
+  'それは事実・解釈・感情のどれに近い？',
+  '比喩で言うとどんな感じ？',
+];
+
+const QUESTION_INTERVAL = 30;
+const PREFETCH_LEAD = 10;
+
+// === Controls ===
+function setSpeed(s) {
+  speed = s;
+  document.querySelectorAll('.controls button[id^="sp"]').forEach(b => b.classList.remove('active'));
+  document.getElementById('sp' + s)?.classList.add('active');
+  if (isRecording) { clearInterval(timerInterval); startTimer(); }
+  log('speed', `Speed set to ${s}x`);
+}
+
+function toggleRecording() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+function startRecording() {
+  isRecording = true;
+  document.getElementById('recToggle').textContent = 'STOP';
+  document.getElementById('recToggle').className = 'danger';
+  document.getElementById('recDot').className = 'rec-dot';
+  document.getElementById('headerText').className = 'header-text';
+  document.getElementById('headerText').textContent = 'RECORDING';
+  document.getElementById('stopArea').style.display = '';
+  document.getElementById('integrationBtns').style.display = 'none';
+  startTimer();
+  startEqualizer();
+  log('system', 'Recording started');
+  updateTimeline();
+}
+
+function stopRecording() {
+  isRecording = false;
+  clearInterval(timerInterval);
+  document.getElementById('recToggle').textContent = 'START';
+  document.getElementById('recToggle').className = 'success';
+  document.getElementById('recDot').className = 'rec-dot stopped';
+  document.getElementById('headerText').className = 'header-text stopped';
+  document.getElementById('headerText').textContent = 'STOPPED';
+  log('system', 'Recording stopped');
+}
+
+function resetAll() {
+  stopRecording();
+  duration = 0;
+  rotationDeg = 0;
+  barHeightMult = 1.0;
+  activeQuestion = null;
+  questionPhase = null;
+  prefetchedQuestion = null;
+  isPrefetching = false;
+  isIntegrating = false;
+  questionsShown = [];
+  questionCount = 0;
+  transcriptText = '';
+  sentenceIndex = 0;
+  lastTranscriptUpdate = 0;
+  typingProgress = 0;
+  if (typingRaf) cancelAnimationFrame(typingRaf);
+  document.getElementById('timer').textContent = '00:00';
+  document.getElementById('transcript').textContent = '';
+  document.getElementById('questionArea').innerHTML = '';
+  document.getElementById('integrationBtns').style.display = 'none';
+  document.getElementById('stopArea').style.display = '';
+  document.getElementById('logPanel').innerHTML = '';
+  document.getElementById('timelineFill').style.width = '0%';
+  document.getElementById('timelineMarkers').innerHTML = '';
+  drawEqualizer([]);
+  log('system', 'Reset complete');
+}
+
+function toggleLog() {
+  const panel = document.getElementById('logPanel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
+}
+
+// === Timer ===
+function startTimer() {
+  const interval = Math.max(10, 1000 / speed);
+  timerInterval = setInterval(() => {
+    if (!isRecording) return;
+    duration++;
+    updateTimerDisplay();
+    updateTranscript();
+    checkPrefetch();
+    checkDisplay();
+    rotationDeg = duration * 0.5;
+    updateTimeline();
+  }, interval);
+}
+
+function updateTimerDisplay() {
+  const m = Math.floor(duration / 60).toString().padStart(2, '0');
+  const s = (duration % 60).toString().padStart(2, '0');
+  document.getElementById('timer').textContent = `${m}:${s}`;
+}
+
+// === Transcript simulation ===
+function updateTranscript() {
+  // Add a sentence every ~8 seconds
+  if (duration - lastTranscriptUpdate >= 8 && sentenceIndex < mockSentences.length) {
+    transcriptText += mockSentences[sentenceIndex];
+    sentenceIndex++;
+    lastTranscriptUpdate = duration;
+    const el = document.getElementById('transcript');
+    el.textContent = transcriptText;
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// === 30-second rhythm ===
+function checkPrefetch() {
+  if (isIntegrating || isPrefetching) return;
+  if (duration < QUESTION_INTERVAL - PREFETCH_LEAD) return;
+  if (duration % QUESTION_INTERVAL !== QUESTION_INTERVAL - PREFETCH_LEAD) return;
+
+  isPrefetching = true;
+  const fetchTime = duration;
+  log('prefetch', `Prefetch triggered at ${formatTime(fetchTime)} (display at ${formatTime(fetchTime + PREFETCH_LEAD)})`);
+
+  // Add prefetch marker to timeline
+  addTimelineMarker(fetchTime, 'prefetch');
+
+  // Simulate API delay (0.5-2s real time, but instant at high speed)
+  const delay = Math.max(100, (500 + Math.random() * 1500) / speed);
+  setTimeout(() => {
+    if (!isRecording || isIntegrating) { isPrefetching = false; return; }
+
+    // 80% chance AI succeeds, 20% static fallback
+    if (Math.random() < 0.8 && questionCount < mockQuestions.length) {
+      prefetchedQuestion = mockQuestions[questionCount];
+      log('prefetch', `AI question ready: "${prefetchedQuestion}"`);
+    } else {
+      const idx = questionCount % staticQuestions.length;
+      prefetchedQuestion = staticQuestions[idx];
+      log('prefetch', `Static fallback: "${prefetchedQuestion}"`);
+    }
+    isPrefetching = false;
+  }, delay);
+}
+
+function checkDisplay() {
+  if (isIntegrating) return;
+  if (duration < QUESTION_INTERVAL || duration % QUESTION_INTERVAL !== 0) return;
+  if (activeQuestion !== null) return;
+
+  // Add display marker to timeline
+  addTimelineMarker(duration, 'display');
+
+  const question = prefetchedQuestion;
+  prefetchedQuestion = null;
+
+  if (!question) {
+    log('error', `No question available at ${formatTime(duration)}`);
+    return;
+  }
+
+  questionsShown.push(question);
+  questionCount++;
+  showQuestion(question, false);
+}
+
+function showQuestion(text, isIntegrationQ) {
+  activeQuestion = text;
+  questionPhase = 'typing';
+  typingProgress = 0;
+
+  log('display', `Q${questionCount}: "${text}" — typing`);
+
+  const area = document.getElementById('questionArea');
+  const span = document.createElement('span');
+  span.className = 'question-text' + (isIntegrationQ ? ' integration' : '');
+  span.textContent = text;
+  area.innerHTML = '';
+  area.appendChild(span);
+
+  // Typewriter via clip-path
+  const charMs = 67;
+  const totalMs = text.length * charMs;
+  const startTime = performance.now();
+
+  function animateTyping(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(1, elapsed / totalMs);
+    span.style.clipPath = `inset(0 ${100 - progress * 100}% 0 0)`;
+    if (progress < 1) {
+      typingRaf = requestAnimationFrame(animateTyping);
+    } else {
+      questionPhase = 'hold';
+      log('display', `Q${questionCount}: hold`);
+
+      if (isIntegrationQ) {
+        // Show integration buttons after 2s
+        setTimeout(() => {
+          document.getElementById('integrationBtns').style.display = '';
+        }, Math.max(100, 2000 / speed));
+        return;
+      }
+
+      // Hold 5s then dissolve
+      setTimeout(() => {
+        questionPhase = 'dissolve';
+        span.classList.add('dissolving');
+        log('display', `Q${questionCount}: dissolve`);
+        setTimeout(() => {
+          activeQuestion = null;
+          questionPhase = null;
+          area.innerHTML = '';
+        }, Math.max(50, 500 / speed));
+      }, Math.max(100, 5000 / speed));
+    }
+  }
+  typingRaf = requestAnimationFrame(animateTyping);
+}
+
+// === Stop / Integration ===
+function handleStop() {
+  if (duration >= 60 && !isIntegrating) {
+    // Integration
+    isIntegrating = true;
+    activeQuestion = null;
+    questionPhase = null;
+    document.getElementById('questionArea').innerHTML = '';
+    document.getElementById('stopArea').style.display = 'none';
+    log('integration', 'Integration phase started');
+
+    // Reduce bars
+    let step = 0;
+    const reduceInterval = setInterval(() => {
+      step++;
+      barHeightMult = 1.0 - (step / 20) * 0.4;
+      if (step >= 20) clearInterval(reduceInterval);
+    }, Math.max(10, 100 / speed));
+
+    // Show integration question after "API call"
+    setTimeout(() => {
+      const q = '今の自分を一文で表すと？';
+      log('integration', `Integration question: "${q}"`);
+      showQuestion(q, true);
+    }, Math.max(200, 1500 / speed));
+  } else if (duration < 30) {
+    log('error', `Too short: ${duration}s (minimum 30s)`);
+  } else {
+    stopRecording();
+    log('system', `Recording complete: ${formatTime(duration)}`);
+  }
+}
+
+function finishIntegration() {
+  isIntegrating = false;
+  activeQuestion = null;
+  questionPhase = null;
+  barHeightMult = 1.0;
+  document.getElementById('questionArea').innerHTML = '';
+  document.getElementById('integrationBtns').style.display = 'none';
+  stopRecording();
+  log('integration', 'Integration complete → navigate to /processing');
+}
+
+// === Equalizer ===
+let eqRaf;
+function startEqualizer() {
+  function draw() {
+    if (!isRecording && !isIntegrating) return;
+    // Generate fake frequency data
+    const data = [];
+    for (let i = 0; i < 64; i++) {
+      data.push(Math.random() * 0.5 + Math.sin(Date.now() / 200 + i * 0.3) * 0.25 + 0.1);
+    }
+    drawEqualizer(data);
+    eqRaf = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function drawEqualizer(frequencyData) {
+  const canvas = document.getElementById('eq');
+  const ctx = canvas.getContext('2d');
+  const size = 240;
+  const dpr = 2;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  // Apply rotation
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate(rotationDeg * Math.PI / 180);
+  ctx.translate(-size / 2, -size / 2);
+
+  const cx = size / 2, cy = size / 2;
+  const innerR = 35;
+  const maxBar = (size / 2 - innerR - 10) * barHeightMult;
+  const barCount = 64;
+
+  for (let i = 0; i < barCount; i++) {
+    const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
+    const value = frequencyData[i] || 0;
+    const barH = Math.max(4, value * maxBar);
+    const x1 = cx + Math.cos(angle) * innerR;
+    const y1 = cy + Math.sin(angle) * innerR;
+    const x2 = cx + Math.cos(angle) * (innerR + barH);
+    const y2 = cy + Math.sin(angle) * (innerR + barH);
+
+    const t = i / barCount;
+    const r = Math.round(t * 255);
+    const g = Math.round(212 - t * 153);
+    const b = Math.round(255 - t * 133);
+
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = `rgb(${r},${g},${b})`;
+    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.stroke();
+
+    if (value > 0.3) {
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.strokeStyle = `rgba(${r},${g},${b},0.3)`;
+      ctx.lineWidth = 6; ctx.stroke();
+    }
+  }
+
+  // Center circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, innerR - 5, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,212,255,0.4)';
+  ctx.lineWidth = 2; ctx.stroke();
+
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerR);
+  grad.addColorStop(0, 'rgba(0,212,255,0.1)');
+  grad.addColorStop(1, 'rgba(0,212,255,0)');
+  ctx.fillStyle = grad; ctx.fill();
+
+  ctx.restore();
+}
+
+// === Timeline ===
+function updateTimeline() {
+  const maxTime = 300; // 5 min view
+  const pct = Math.min(100, (duration / maxTime) * 100);
+  document.getElementById('timelineFill').style.width = pct + '%';
+}
+
+function addTimelineMarker(time, type) {
+  const maxTime = 300;
+  const pct = (time / maxTime) * 100;
+  const el = document.createElement('div');
+  if (type === 'display') {
+    el.className = 'timeline-marker';
+    el.style.left = pct + '%';
+    el.dataset.label = `Q${questionCount + 1}`;
+  } else {
+    el.className = 'timeline-prefetch';
+    el.style.left = pct + '%';
+  }
+  document.getElementById('timelineMarkers').appendChild(el);
+}
+
+// === Log ===
+function log(type, message) {
+  const panel = document.getElementById('logPanel');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `<span class="log-time">${formatTime(duration)}</span><span class="log-event ${type}">${message}</span>`;
+  panel.appendChild(entry);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60).toString().padStart(2, '0');
+  const ss = (s % 60).toString().padStart(2, '0');
+  return `${m}:${ss}`;
+}
+
+// Init
+drawEqualizer([]);
+log('system', 'Test page ready. Press START to begin.');
+</script>
+</body>
+</html>

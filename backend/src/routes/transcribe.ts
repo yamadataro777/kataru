@@ -47,7 +47,12 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     // Whisperが生成するハルシネーション定型文を除去
+    // (promptエコーバック + YouTube定型文 + 挨拶系)
     const hallucinations = [
+      // Whisper prompt echo-back (無音時にpromptをそのまま返す)
+      /哲学的な思考や自己分析の録音。?/g,
+      /虚無主義、?ニヒリズム、?実存主義、?形而上学、?認識論、?弁証法、?現象学、?構造主義、?ポスト構造主義、?脱構築、?存在論、?アイデンティティ、?自己実現、?内省、?メタ認知。?/g,
+      // YouTube系定型文
       /ご視聴ありがとうございました。?/g,
       /ご視聴いただきありがとうございました。?/g,
       /ご視聴ありがとうございます。?/g,
@@ -76,6 +81,21 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     finalTranscript = cleanTranscript(finalTranscript);
 
     const wordCount = finalTranscript.length;
+
+    // 音声認識結果が短すぎる場合（無音 or ハルシネーションのみ）
+    const MIN_TRANSCRIPT_LENGTH = 10;
+    if (wordCount < MIN_TRANSCRIPT_LENGTH) {
+      await updateSession(session_id, {
+        transcript: finalTranscript || '',
+        word_count: wordCount,
+        status: 'error',
+      });
+      res.status(422).json({
+        error: '音声を認識できませんでした。静かな場所でマイクに近づいて、もう一度録音してください。',
+        code: 'TRANSCRIPT_TOO_SHORT',
+      });
+      return;
+    }
 
     const updated = await updateSession(session_id, {
       transcript: finalTranscript,
