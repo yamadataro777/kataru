@@ -11,6 +11,7 @@ import coachingRouter from './routes/coaching';
 import authRouter from './routes/auth';
 import revenuecatRouter from './routes/revenuecat';
 import brainDumpRouter from './routes/brain-dump';
+import roundRouter from './routes/round';
 
 const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/conversations', conversationsRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/coaching', coachingRouter);
 app.use('/api/brain-dump', brainDumpRouter);
+app.use('/api/round', roundRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
