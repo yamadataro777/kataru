@@ -1,5 +1,21 @@
 # Kataru 開発の軌跡
 
+## 2026-03-12: Implementation Playbook 策定
+
+### 概要
+Thinking Companion への進化にあたり、実装順序を固定するための開発仕様書（Implementation Playbook）を作成。
+
+### 内容
+- 10フェーズの実装順序を確定（汎用コア → 安全 → 回復 → まとめ → モード → 深度 → Maybe → Memory → 可変ターン → 特化アダプタ）
+- 各フェーズの禁止事項・完了条件（Gate）・依存関係マップを定義
+- 順番違反の副作用を文書化（「賢いが気持ち悪い」「深いが不安定」「何でもできそうで何も再現できない」パターン）
+- 開発原則: 体験価値の再現率 > 内部構造の洗練度
+
+### 作成ファイル
+- `IMPLEMENTATION_PLAYBOOK.md`
+
+---
+
 ## 2026-03-10: 思考の交通整理アプリへの変革
 
 ### 概要
@@ -1154,4 +1170,35 @@ Record機能を最もシンプルな形に。ユーザーは自由に話し、30
 - `frontend/src/app/record/page.tsx` (更新 — 新hook接続、interventionType表示分岐)
 - `frontend/src/hooks/useQuestionIntervention.ts` (削除)
 
-*このドキュメントは2026年3月10日時点の開発状況を記録したものです。*
+---
+
+## 2026-03-12: Thinking Companion Phase 1 — Echo/Sense/Next + Safety Guardrails
+
+### 概要
+3ラウンド思考プロトコルのレスポンス形式を Mirror+Question から Echo/Sense/Next に進化。
+「理解された感」を中心に据えた対話エンジンへの第一歩。
+
+### 設計思想
+- **Echo**: ユーザーの原文語彙を使った映し返し（最重要、壊してはならない）
+- **Sense**: まだ言語化されていないパターンや接続の浮上（仮説形のみ）
+- **Next**: 二択/一点絞り込み型の問い（V2規範を継承）
+- **Mode**: structure/release/depth の方向感をLLMが判断（primary + optional secondary）
+- **Safety**: 危機語彙検出（LLM判定 + regex安全網）→ 固定共感応答 + 専門リソース案内
+
+### 変更内容
+
+**新規ファイル:**
+- `backend/src/prompts/thinking-companion-prompt.ts` — Echo/Sense/Nextプロンプト、パーサー、フォールバック、危機検出
+- `backend/src/migrations/010_response_v2.sql` — response_v2 JSONB + depth_used + mode_primary + mode_secondary
+
+**変更ファイル:**
+- `backend/src/routes/round.ts` — TC path追加（`THINKING_COMPANION` env, デフォルトON）、後方互換でmirror=echo, question=next
+- `frontend/src/lib/api.ts` — RoundQuestionResponse に echo/sense/next/mode/is_crisis 追加
+- `frontend/src/app/record/page.tsx` — Question phaseを3カード表示（Echo/Sense/Next）、Crisis notice
+
+### 後方互換性
+- API responseに mirror/question フィールドを維持（echo/next のエイリアス）
+- `THINKING_COMPANION=false` でレガシーV1/V2 path にフォールバック可能
+- DB: 既存の mirror/question カラムにも書き込み（response_v2は追加フィールド）
+
+*このドキュメントは2026年3月12日時点の開発状況を記録したものです。*

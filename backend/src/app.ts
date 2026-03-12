@@ -12,6 +12,7 @@ import authRouter from './routes/auth';
 import revenuecatRouter from './routes/revenuecat';
 import brainDumpRouter from './routes/brain-dump';
 import roundRouter from './routes/round';
+import marketingRouter from './routes/marketing';
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/feedback', feedbackRouter);
 app.use('/api/coaching', coachingRouter);
 app.use('/api/brain-dump', brainDumpRouter);
 app.use('/api/round', roundRouter);
+app.use('/api/marketing', marketingRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

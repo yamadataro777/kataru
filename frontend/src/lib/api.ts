@@ -9,9 +9,16 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === 'true') {
     return { 'X-Dev-Bypass': 'true' };
   }
-  if (!supabase) return {};
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) return {};
+  if (!supabase) {
+    console.warn('[Auth] supabase client is null');
+    return {};
+  }
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) console.warn('[Auth] getSession error:', error.message);
+  if (!session?.access_token) {
+    console.warn('[Auth] no access_token, session:', !!session);
+    return {};
+  }
   return { Authorization: `Bearer ${session.access_token}` };
 }
 
@@ -418,6 +425,11 @@ export interface RoundQuestionResponse {
   transcript: string;
   mirror: string;
   question: string;
+  // Thinking Companion fields (present when TC is enabled)
+  echo?: string;
+  sense?: string;
+  next?: string;
+  is_crisis?: boolean;
   memory: RoundSessionMemory;
   latency_ms: number;
   used_fallback: boolean;
@@ -490,6 +502,111 @@ export async function updateRoundRound(
   questionRating: string,
 ): Promise<unknown> {
   return request(`/api/round/round/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ question_rating: questionRating }),
+  });
+}
+
+// === Marketing API ===
+
+export interface MarketingFieldState<T = string | string[] | null> {
+  status: 'known' | 'assumed' | 'missing' | 'conflicted';
+  value: T;
+}
+
+export interface MarketingCanvasState {
+  goal: MarketingFieldState<string | null>;
+  product: MarketingFieldState<string | null>;
+  target_customer: MarketingFieldState<string | null>;
+  pain: MarketingFieldState<string[]>;
+  trigger_moment: MarketingFieldState<string[]>;
+  promise: MarketingFieldState<string | null>;
+  differentiation: MarketingFieldState<string[]>;
+  proof: MarketingFieldState<string[]>;
+  channel: MarketingFieldState<string[]>;
+  offer: MarketingFieldState<string[]>;
+  next_experiment: MarketingFieldState<string | null>;
+  current_focus?: string | null;
+}
+
+export interface MarketingQuestionResponse {
+  round_id: string;
+  transcript: string;
+  mirror: string;
+  question: string;
+  question_type: string;
+  question_target_field: string;
+  canvas: MarketingCanvasState;
+  round_number: number;
+  latency_ms: number;
+  used_fallback: boolean;
+}
+
+export interface MarketingSummaryResponse {
+  marketing_hypothesis: string;
+  target_hypothesis: string;
+  pain_hypothesis: string;
+  promised_value: string;
+  appeal_angles: string[];
+  next_experiment: string;
+}
+
+export async function createMarketingSession(
+  goal: string,
+): Promise<{ id: string; canvas: MarketingCanvasState }> {
+  return request('/api/marketing/session', {
+    method: 'POST',
+    body: JSON.stringify({ goal }),
+  });
+}
+
+export async function submitMarketingQuestion(formData: FormData): Promise<MarketingQuestionResponse> {
+  const signal = createTimeoutSignal(60_000);
+  const authHeaders = await getAuthHeaders();
+  try {
+    const res = await fetch(`${BASE_URL}/api/marketing/question`, {
+      method: 'POST',
+      body: formData,
+      headers: authHeaders,
+      signal,
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: res.statusText }));
+      throw new Error(error.message || error.error || '分析に失敗しました');
+    }
+    return res.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('分析がタイムアウトしました。再試行してください。');
+    }
+    throw err;
+  }
+}
+
+export async function submitMarketingSummary(
+  sessionId: string,
+): Promise<MarketingSummaryResponse> {
+  return request('/api/marketing/summary', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+}
+
+export async function updateMarketingSession(
+  id: string,
+  data: { status?: string },
+): Promise<unknown> {
+  return request(`/api/marketing/session/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateMarketingRound(
+  id: string,
+  questionRating: string,
+): Promise<unknown> {
+  return request(`/api/marketing/round/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ question_rating: questionRating }),
   });

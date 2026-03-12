@@ -28,6 +28,11 @@ interface RoundResult {
   transcript: string;
   mirror: string;
   question: string;
+  // Thinking Companion fields
+  echo?: string;
+  sense?: string;
+  next?: string;
+  isCrisis?: boolean;
   questionRating: QuestionRating | null;
 }
 
@@ -166,6 +171,10 @@ export default function RecordPage() {
             JSON.stringify(snap.rounds.map((r) => r.question)),
           );
           formData.append('session_memory', JSON.stringify(snap.sessionMemory || {}));
+          formData.append(
+            'previous_ratings',
+            JSON.stringify(snap.rounds.map((r) => r.questionRating)),
+          );
 
           if (clientTranscript && clientTranscript.length > 0) {
             formData.append('transcript', clientTranscript);
@@ -187,6 +196,10 @@ export default function RecordPage() {
               transcript: result.transcript,
               mirror: result.mirror,
               question: result.question,
+              echo: result.echo,
+              sense: result.sense,
+              next: result.next,
+              isCrisis: result.is_crisis,
               questionRating: null,
             },
           ]);
@@ -573,29 +586,50 @@ export default function RecordPage() {
 
           {/* ========== QUESTION PHASE ========== */}
           {phase === 'question' && currentRound && (
-            <div className="flex-1 flex flex-col items-center justify-center gap-5">
-              {/* Mirror */}
+            <div className="flex-1 flex flex-col items-center justify-center gap-4">
+              {/* Echo — most important, always first */}
               <GlassCard variant="cyan" className="w-full p-4">
                 <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-2">
-                  理解ミラー
+                  ECHO
                 </p>
                 <p className="text-sm text-hud-white leading-relaxed">
-                  {currentRound.mirror}
+                  {currentRound.echo || currentRound.mirror}
                 </p>
               </GlassCard>
 
-              {/* Question */}
+              {/* Sense */}
+              {(currentRound.sense || !currentRound.echo) && (
+                <GlassCard variant="cyan" className="w-full p-4 opacity-90">
+                  <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-40 mb-2">
+                    SENSE
+                  </p>
+                  <p className="text-sm text-hud-white opacity-90 leading-relaxed">
+                    {currentRound.sense || ''}
+                  </p>
+                </GlassCard>
+              )}
+
+              {/* Next — the question */}
               <GlassCard variant="magenta" className="w-full p-4">
                 <p className="text-[10px] tracking-[2px] text-neon-magenta opacity-60 mb-2">
-                  問い
+                  NEXT
                 </p>
                 <p
                   className="text-base text-hud-white leading-relaxed font-medium"
                   style={{ textShadow: '0 0 20px rgba(255,59,122,0.15)' }}
                 >
-                  {currentRound.question}
+                  {currentRound.next || currentRound.question}
                 </p>
               </GlassCard>
+
+              {/* Crisis notice */}
+              {currentRound.isCrisis && (
+                <div className="w-full p-3 rounded-lg border border-[rgba(255,59,122,0.3)] bg-[rgba(255,59,122,0.08)]">
+                  <p className="text-xs text-hud-white opacity-80 leading-relaxed text-center">
+                    つらい時は一人で抱え込まないでください
+                  </p>
+                </div>
+              )}
 
               {/* Rating buttons */}
               <div className="w-full">

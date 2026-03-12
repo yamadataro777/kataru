@@ -3,17 +3,28 @@ import multer from 'multer';
 import OpenAI, { toFile } from 'openai';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../services/supabase';
-import { generateContent } from '../services/gemini';
+import { generateContent, generateRoundContent } from '../services/gemini';
 import { cleanTranscript } from '../utils/clean-transcript';
 import {
   SessionMemory,
+  QuestionRating,
   buildContext,
   buildRoundQuestionPrompt,
+  buildRoundQuestionPromptV2,
   parseRoundResponse,
   generateFallbackResponse,
   buildSummaryPrompt,
   parseSummaryResponse,
 } from '../prompts/round-question-prompt';
+import {
+  buildContextV2,
+  buildThinkingCompanionPrompt,
+  parseTurnResponseV2,
+  generateFallbackEchoSenseNext,
+  detectCrisisRegex,
+  generateCrisisResponse,
+  TurnResponseV2,
+} from '../prompts/thinking-companion-prompt';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -34,7 +45,7 @@ router.post('/session', requireAuth, async (req: Request, res: Response) => {
     const { data, error } = await supabase
       .from('round_sessions')
       .insert({
-        user_id: authReq.userId,
+        user_id: authReq.userId === 'dev-user' ? null : authReq.userId,
         selected_duration,
         status: 'active',
       })
@@ -65,6 +76,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
       transcript: clientTranscript,
       round_number,
       previous_questions,
+      previous_ratings: previousRatingsRaw,
       session_memory,
       session_id,
       duration_sec,
@@ -76,8 +88,15 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
       return;
     }
 
+    const useTC = process.env.THINKING_COMPANION !== 'false'; // TC on by default
+    const useV2 = process.env.ROUND_PROMPT_V2 !== 'false';
+    const usePrevRatings = process.env.ROUND_USE_PREVIOUS_RATINGS !== 'false';
+
     const roundNum = parseInt(round_number) || 1;
     const prevQuestions: string[] = previous_questions ? JSON.parse(previous_questions) : [];
+    const prevRatings: (QuestionRating | null)[] = previousRatingsRaw
+      ? JSON.parse(previousRatingsRaw)
+      : [];
     const memory: SessionMemory | null = session_memory ? JSON.parse(session_memory) : null;
     const durationSec = parseInt(duration_sec) || 0;
 
@@ -115,16 +134,154 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
       return;
     }
 
-    // --- Gemini Analysis ---
-    const context = buildContext(finalTranscript, memory, roundNum, prevQuestions);
-    const prompt = buildRoundQuestionPrompt(context, roundNum);
+    // --- Thinking Companion path ---
+    if (useTC) {
+      // Crisis detection: regex safety net first
+      const regexCrisis = detectCrisisRegex(finalTranscript);
+
+      let tcResponse: TurnResponseV2;
+      let usedFallback = false;
+
+      if (regexCrisis) {
+        // Regex detected crisis — use fixed safe response
+        tcResponse = generateCrisisResponse(finalTranscript);
+        usedFallback = false; // Not a fallback, intentional crisis response
+      } else {
+        // Normal TC path
+        const context = buildContextV2(
+          finalTranscript,
+          memory,
+          roundNum,
+          prevQuestions,
+          usePrevRatings ? prevRatings : undefined,
+        );
+        const prompt = buildThinkingCompanionPrompt(context, roundNum);
+
+        try {
+          const geminiResult = await Promise.race([
+            generateRoundContent(prompt),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('gemini_timeout')), GEMINI_TIMEOUT_MS),
+            ),
+          ]);
+
+          const parsed = parseTurnResponseV2(geminiResult);
+
+          if (parsed) {
+            // LLM also detected crisis — override with safe response
+            if (parsed.is_crisis) {
+              tcResponse = generateCrisisResponse(finalTranscript);
+            } else {
+              tcResponse = parsed;
+            }
+          } else {
+            console.error('Failed to parse TC response:', geminiResult.substring(0, 300));
+            tcResponse = generateFallbackEchoSenseNext(finalTranscript, roundNum, memory);
+            usedFallback = true;
+          }
+        } catch (geminiErr) {
+          console.error('Gemini TC analysis failed:', geminiErr);
+          tcResponse = generateFallbackEchoSenseNext(finalTranscript, roundNum, memory);
+          usedFallback = true;
+        }
+      }
+
+      const latencyMs = Date.now() - startTime;
+
+      // Persist — backward compatible: mirror=echo, question=next
+      const { data: roundData, error: roundError } = await supabase
+        .from('round_rounds')
+        .insert({
+          session_id,
+          round_number: roundNum,
+          duration_sec: durationSec,
+          transcript: finalTranscript,
+          transcript_length: finalTranscript.length,
+          mirror: tcResponse.echo,
+          question: tcResponse.next,
+          latency_ms: latencyMs,
+          used_fallback: usedFallback,
+          memory: tcResponse.memory,
+          question_angle: tcResponse.memory.recent_question_angle,
+          prompt_version: 'tc-v1',
+          used_previous_ratings: usePrevRatings && prevRatings.length > 0,
+          response_v2: {
+            echo: tcResponse.echo,
+            sense: tcResponse.sense,
+            next: tcResponse.next,
+            mode: tcResponse.mode,
+            is_crisis: tcResponse.is_crisis,
+          },
+          // TODO(Phase2): Remove temporary mode observability after Phase 2 evaluation
+          mode_primary: tcResponse.mode.primary,
+          mode_secondary: tcResponse.mode.secondary || null,
+        })
+        .select()
+        .single();
+
+      if (roundError) throw roundError;
+
+      // Update session
+      await supabase
+        .from('round_sessions')
+        .update({
+          total_rounds: roundNum,
+          session_memory: tcResponse.memory,
+        })
+        .eq('id', session_id);
+
+      // Log event
+      await supabase.from('round_events').insert({
+        session_id,
+        event_type: 'round_completed',
+        round_number: roundNum,
+        data: {
+          latency_ms: latencyMs,
+          used_fallback: usedFallback,
+          used_whisper: usedWhisper,
+          transcript_length: finalTranscript.length,
+          prompt_version: 'tc-v1',
+          mode_primary: tcResponse.mode.primary,
+          is_crisis: tcResponse.is_crisis,
+        },
+      });
+
+      // Response: includes both TC fields and backward-compatible mirror/question
+      res.json({
+        round_id: roundData.id,
+        transcript: finalTranscript,
+        mirror: tcResponse.echo,
+        question: tcResponse.next,
+        echo: tcResponse.echo,
+        sense: tcResponse.sense,
+        next: tcResponse.next,
+        is_crisis: tcResponse.is_crisis,
+        memory: tcResponse.memory,
+        latency_ms: latencyMs,
+        used_fallback: usedFallback,
+      });
+      return;
+    }
+
+    // --- Legacy V1/V2 path ---
+    const context = buildContext(
+      finalTranscript,
+      memory,
+      roundNum,
+      prevQuestions,
+      usePrevRatings ? prevRatings : undefined,
+    );
+    const prompt = useV2
+      ? buildRoundQuestionPromptV2(context, roundNum)
+      : buildRoundQuestionPrompt(context, roundNum);
 
     let response;
     let usedFallback = false;
 
     try {
+      const geminiCall = useV2 ? generateRoundContent(prompt) : generateContent(prompt);
       const geminiResult = await Promise.race([
-        generateContent(prompt),
+        geminiCall,
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('gemini_timeout')), GEMINI_TIMEOUT_MS),
         ),
@@ -134,12 +291,12 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
 
       if (!response) {
         console.error('Failed to parse round response:', geminiResult.substring(0, 300));
-        response = generateFallbackResponse(finalTranscript, roundNum);
+        response = generateFallbackResponse(finalTranscript, roundNum, memory);
         usedFallback = true;
       }
     } catch (geminiErr) {
       console.error('Gemini round analysis failed:', geminiErr);
-      response = generateFallbackResponse(finalTranscript, roundNum);
+      response = generateFallbackResponse(finalTranscript, roundNum, memory);
       usedFallback = true;
     }
 
@@ -159,6 +316,9 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
         latency_ms: latencyMs,
         used_fallback: usedFallback,
         memory: response.memory,
+        question_angle: response.memory.recent_question_angle,
+        prompt_version: useV2 ? 'v2' : 'v1',
+        used_previous_ratings: usePrevRatings && prevRatings.length > 0,
       })
       .select()
       .single();

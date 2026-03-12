@@ -86,3 +86,49 @@ export async function generateBrainDumpQuestion(prompt: string): Promise<string>
   const result = await fastModel.generateContent(prompt);
   return result.response.text().trim();
 }
+
+const roundModel = genAI.getGenerativeModel({
+  model: 'gemini-2.5-flash',
+  generationConfig: {
+    temperature: 0.7,
+    maxOutputTokens: 500,
+  },
+});
+
+export async function generateRoundContent(prompt: string): Promise<string> {
+  const result = await roundModel.generateContent(prompt);
+  return result.response.text();
+}
+
+const marketingModel = genAI.getGenerativeModel({
+  model: 'gemini-2.5-flash',
+  generationConfig: {
+    temperature: 0.7,
+    maxOutputTokens: 1200,
+    // @ts-expect-error — thinkingConfig is supported by Gemini 2.5 but not yet in SDK types
+    thinkingConfig: { thinkingBudget: 2048 },
+  },
+});
+
+export interface GeminiMarketingResult {
+  text: string;
+  usage?: {
+    promptTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+}
+
+export async function generateMarketingContent(prompt: string): Promise<GeminiMarketingResult> {
+  const result = await marketingModel.generateContent(prompt);
+  const response = result.response;
+  const usage = response.usageMetadata;
+  return {
+    text: response.text(),
+    usage: usage ? {
+      promptTokens: usage.promptTokenCount,
+      outputTokens: usage.candidatesTokenCount,
+      totalTokens: usage.totalTokenCount,
+    } : undefined,
+  };
+}
