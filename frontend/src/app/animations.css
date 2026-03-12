@@ -1,3 +1,8 @@
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes glitch {
   0% { transform: translate(0); clip-path: inset(0 0 0 0); }
   20% { transform: translate(-2px, 2px); clip-path: inset(20% 0 60% 0); }

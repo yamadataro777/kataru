@@ -1,5 +1,11 @@
 # Git Worktree Log
 
+## 2026-03-12
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: 1df815b — feat: Thinking Companion + Marketing壁打ち + Echo/Sense/Next汎用化
+- **Changes**: TC統合(Echo/Sense/Next対話・危機検知・フォールバック)、Marketing壁打ちモード、Echo/Sense/Nextスタブ除去+汎用化、Round analyticsマイグレーション、フロントエンドTC/Marketing UI
+
 ## 2026-03-10 (思考の交通整理アプリへの変革)
 - **Branch**: intp-record-specification
 - **Action**: 実装完了（未コミット）

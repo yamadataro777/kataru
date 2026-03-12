@@ -91,13 +91,38 @@ const roundModel = genAI.getGenerativeModel({
   model: 'gemini-2.5-flash',
   generationConfig: {
     temperature: 0.7,
-    maxOutputTokens: 500,
+    maxOutputTokens: 2048,
+    // @ts-expect-error — thinkingConfig is supported by Gemini 2.5 but not yet in SDK types
+    thinkingConfig: { thinkingBudget: 1024 },
   },
 });
+
+export interface GeminiRoundResult {
+  text: string;
+  usage?: {
+    promptTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+}
 
 export async function generateRoundContent(prompt: string): Promise<string> {
   const result = await roundModel.generateContent(prompt);
   return result.response.text();
+}
+
+export async function generateRoundContentWithUsage(prompt: string): Promise<GeminiRoundResult> {
+  const result = await roundModel.generateContent(prompt);
+  const response = result.response;
+  const usage = response.usageMetadata;
+  return {
+    text: response.text(),
+    usage: usage ? {
+      promptTokens: usage.promptTokenCount,
+      outputTokens: usage.candidatesTokenCount,
+      totalTokens: usage.totalTokenCount,
+    } : undefined,
+  };
 }
 
 const marketingModel = genAI.getGenerativeModel({

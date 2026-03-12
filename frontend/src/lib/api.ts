@@ -507,6 +507,14 @@ export async function updateRoundRound(
   });
 }
 
+export async function rerollRoundQuestion(roundId: string): Promise<RoundQuestionResponse> {
+  return request(`/api/round/round/${roundId}/reroll`, { method: 'POST' });
+}
+
+export async function deleteRoundRound(roundId: string): Promise<{ memory: RoundSessionMemory | null }> {
+  return request(`/api/round/round/${roundId}`, { method: 'DELETE' });
+}
+
 // === Marketing API ===
 
 export interface MarketingFieldState<T = string | string[] | null> {

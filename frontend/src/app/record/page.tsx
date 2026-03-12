@@ -15,6 +15,8 @@ import {
   submitRoundSummary,
   updateRoundSession,
   updateRoundRound,
+  rerollRoundQuestion,
+  deleteRoundRound,
   RoundSessionMemory,
 } from '@/lib/api';
 
@@ -34,6 +36,7 @@ interface RoundResult {
   next?: string;
   isCrisis?: boolean;
   questionRating: QuestionRating | null;
+  hasRerolled?: boolean;
 }
 
 interface SummaryData {
@@ -73,6 +76,7 @@ export default function RecordPage() {
 
   // UI state
   const [error, setError] = useState<string | null>(null);
+  const [isRerolling, setIsRerolling] = useState(false);
 
   // Hooks
   const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } =
@@ -271,6 +275,62 @@ export default function RecordPage() {
     },
     [rounds],
   );
+
+  const handleReroll = useCallback(async () => {
+    const round = rounds[rounds.length - 1];
+    if (!round || round.isCrisis || round.hasRerolled) return;
+
+    setIsRerolling(true);
+    setPhase('analyzing');
+    setError(null);
+
+    try {
+      const result = await rerollRoundQuestion(round.roundId);
+
+      setRounds(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          roundId: result.round_id,
+          transcript: result.transcript,
+          mirror: result.mirror,
+          question: result.question,
+          echo: result.echo,
+          sense: result.sense,
+          next: result.next,
+          isCrisis: result.is_crisis,
+          questionRating: null,
+          hasRerolled: true,
+        };
+        return updated;
+      });
+      setSessionMemory(result.memory);
+      setPhase('question');
+      triggerHaptic('medium');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'リロールに失敗しました');
+      setPhase('question');
+    } finally {
+      setIsRerolling(false);
+    }
+  }, [rounds]);
+
+  const handleReset = useCallback(async () => {
+    const round = rounds[rounds.length - 1];
+    if (!round || round.isCrisis) return;
+
+    setError(null);
+
+    try {
+      const result = await deleteRoundRound(round.roundId);
+
+      setRounds(prev => prev.slice(0, -1));
+      setSessionMemory(result.memory);
+      setPhase('idle');
+      isAnalyzingRef.current = false;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '取り消しに失敗しました');
+    }
+  }, [rounds]);
 
   const handleNextRound = useCallback(() => {
     if (roundNumber >= 3) {
@@ -566,21 +626,37 @@ export default function RecordPage() {
             </div>
           )}
 
-          {/* ========== ANALYZING PHASE ========== */}
+          {/* ========== ANALYZING PHASE (Active Wait) ========== */}
           {phase === 'analyzing' && (
-            <div className="flex-1 flex flex-col items-center justify-center gap-6">
-              <div
-                className="w-16 h-16 rounded-full border-2 border-neon-cyan"
-                style={{
-                  borderTopColor: 'transparent',
-                  animation: 'spin 1s linear infinite',
-                  boxShadow: '0 0 20px rgba(0,212,255,0.3)',
-                }}
-              />
-              <p className="text-sm text-neon-cyan tracking-[3px]">AI分析中...</p>
-              <p className="text-[10px] text-hud-white-dim tracking-wide">
-                あなたの話を理解しています
+            <div className="flex-1 flex flex-col items-center justify-center gap-5">
+              {/* Pulsing equalizer — slow breathing animation */}
+              <div className="relative" style={{ width: 180, height: 180 }}>
+                <CircularEqualizer
+                  frequencyData={new Array(64).fill(0).map((_, i) => 0.08 + Math.sin(Date.now() / 1200 + i * 0.3) * 0.06)}
+                  size={180}
+                  rotationDeg={(Date.now() / 60) % 360}
+                  energy={0.15}
+                />
+              </div>
+
+              <p className="text-sm text-neon-cyan tracking-[3px]">
+                {isRerolling ? '別の切り口を探しています' : 'あなたの言葉を読んでいます'}
               </p>
+
+              {/* Captured transcript scroll-in */}
+              {capturedTranscriptRef.current && (
+                <div
+                  className="w-full max-h-24 overflow-y-auto"
+                  style={{
+                    maskImage: 'linear-gradient(to top, black 60%, transparent 100%)',
+                    animation: 'fadeIn 1.2s ease-out',
+                  }}
+                >
+                  <p className="text-xs leading-6 text-hud-white opacity-50 tracking-wide text-center">
+                    {capturedTranscriptRef.current}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -631,10 +707,34 @@ export default function RecordPage() {
                 </div>
               )}
 
-              {/* Rating buttons */}
-              <div className="w-full">
+              {/* Reroll link */}
+              {!currentRound.isCrisis && !currentRound.hasRerolled && (
+                <button
+                  onClick={handleReroll}
+                  disabled={isRerolling}
+                  className="text-xs text-neon-cyan/50 hover:text-neon-cyan/80 tracking-wider transition-opacity bg-transparent border-0 cursor-pointer"
+                >
+                  別の問いを見る
+                </button>
+              )}
+              {currentRound.hasRerolled && (
+                <span className="text-[10px] text-hud-white/40 tracking-wider">
+                  リロール済み
+                </span>
+              )}
+
+              {/* Next button — always visible, rating is optional */}
+              <NeonButton
+                onClick={handleNextRound}
+                variant={roundNumber >= 3 ? 'lime' : 'cyan'}
+              >
+                {roundNumber >= 3 ? 'セッションをまとめる' : '次のラウンドへ'}
+              </NeonButton>
+
+              {/* Rating buttons — optional feedback */}
+              <div className="w-full opacity-70">
                 <p className="text-[10px] tracking-[2px] text-hud-white-dim text-center mb-3">
-                  この問いはどうでしたか？
+                  この問いはどうでしたか？（任意）
                 </p>
                 <div className="flex gap-2">
                   {([
@@ -668,14 +768,14 @@ export default function RecordPage() {
                 </div>
               </div>
 
-              {/* Next button */}
-              {currentRound.questionRating && (
-                <NeonButton
-                  onClick={handleNextRound}
-                  variant={roundNumber >= 3 ? 'lime' : 'cyan'}
+              {/* Reset link */}
+              {!currentRound.isCrisis && (
+                <button
+                  onClick={handleReset}
+                  className="text-[10px] text-hud-white/30 hover:text-hud-white/50 tracking-wider transition-opacity bg-transparent border-0 cursor-pointer mt-2"
                 >
-                  {roundNumber >= 3 ? 'セッションをまとめる' : '次のラウンドへ'}
-                </NeonButton>
+                  この回答を取り消す
+                </button>
               )}
             </div>
           )}

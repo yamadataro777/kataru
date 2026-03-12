@@ -3,7 +3,7 @@ import multer from 'multer';
 import OpenAI, { toFile } from 'openai';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../services/supabase';
-import { generateContent, generateRoundContent } from '../services/gemini';
+import { generateContent, generateRoundContent, generateRoundContentWithUsage } from '../services/gemini';
 import { cleanTranscript } from '../utils/clean-transcript';
 import {
   SessionMemory,
@@ -19,11 +19,19 @@ import {
 import {
   buildContextV2,
   buildThinkingCompanionPrompt,
+  buildRerollConstraint,
   parseTurnResponseV2,
   generateFallbackEchoSenseNext,
   detectCrisisRegex,
   generateCrisisResponse,
+  detectSensitiveTopic,
+  detectPullBack,
+  resolveGuardrail,
   TurnResponseV2,
+  SensitiveTopicResult,
+  PullBackSignal,
+  GuardrailMode,
+  GuardrailModeLog,
 } from '../prompts/thinking-companion-prompt';
 
 const router = Router();
@@ -136,18 +144,32 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
 
     // --- Thinking Companion path ---
     if (useTC) {
-      // Crisis detection: regex safety net first
-      const regexCrisis = detectCrisisRegex(finalTranscript);
-
+      // Phase 2: All variables initialized outside if for telemetry resilience
       let tcResponse: TurnResponseV2;
       let usedFallback = false;
+      let geminiLatencyMs = 0;
+      let promptTokens: number | undefined;
+      let outputTokens: number | undefined;
+      let guardrailLog: GuardrailModeLog = 'standard';
+      let crisisSource: 'regex_high' | 'llm_only' | 'llm_with_regex_low' | null = null;
+      let failureReason: 'parse_failed' | 'timeout' | 'gemini_error' | null = null;
+      let llmIsCrisis = false;
 
-      if (regexCrisis) {
-        // Regex detected crisis — use fixed safe response
+      // Crisis detection: 2-tier regex safety net
+      const crisisSignal = detectCrisisRegex(finalTranscript);
+
+      // Sensitive/pullback computed before LLM call (telemetry survives exceptions)
+      const sensitiveTopic: SensitiveTopicResult = detectSensitiveTopic(finalTranscript);
+      const pullBack: PullBackSignal = detectPullBack(finalTranscript, roundNum, prevRatings);
+
+      if (crisisSignal.highConfidence) {
+        // High-confidence regex → fixed crisis response, no LLM call
         tcResponse = generateCrisisResponse(finalTranscript);
-        usedFallback = false; // Not a fallback, intentional crisis response
+        guardrailLog = 'crisis_fixed';
+        crisisSource = 'regex_high';
       } else {
-        // Normal TC path
+        const guardrail: GuardrailMode = resolveGuardrail(sensitiveTopic, pullBack);
+
         const context = buildContextV2(
           finalTranscript,
           memory,
@@ -155,40 +177,57 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
           prevQuestions,
           usePrevRatings ? prevRatings : undefined,
         );
-        const prompt = buildThinkingCompanionPrompt(context, roundNum);
+        const prompt = buildThinkingCompanionPrompt(context, roundNum, guardrail, sensitiveTopic.topicLabel);
 
         try {
+          const geminiStart = Date.now();
           const geminiResult = await Promise.race([
-            generateRoundContent(prompt),
+            generateRoundContentWithUsage(prompt),
             new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('gemini_timeout')), GEMINI_TIMEOUT_MS),
             ),
           ]);
+          geminiLatencyMs = Date.now() - geminiStart;
+          promptTokens = geminiResult.usage?.promptTokens;
+          outputTokens = geminiResult.usage?.outputTokens;
 
-          const parsed = parseTurnResponseV2(geminiResult);
+          const parsed = parseTurnResponseV2(geminiResult.text);
 
           if (parsed) {
-            // LLM also detected crisis — override with safe response
+            llmIsCrisis = parsed.is_crisis;
             if (parsed.is_crisis) {
               tcResponse = generateCrisisResponse(finalTranscript);
+              guardrailLog = 'crisis_fixed';
+              crisisSource = crisisSignal.lowConfidence ? 'llm_with_regex_low' : 'llm_only';
             } else {
               tcResponse = parsed;
+              guardrailLog = guardrail;
             }
           } else {
-            console.error('Failed to parse TC response:', geminiResult.substring(0, 300));
+            console.error('Failed to parse TC response:', geminiResult.text.substring(0, 300));
             tcResponse = generateFallbackEchoSenseNext(finalTranscript, roundNum, memory);
             usedFallback = true;
+            failureReason = 'parse_failed';
+            guardrailLog = guardrail;
           }
         } catch (geminiErr) {
+          geminiLatencyMs = Date.now() - startTime; // approximate
           console.error('Gemini TC analysis failed:', geminiErr);
           tcResponse = generateFallbackEchoSenseNext(finalTranscript, roundNum, memory);
           usedFallback = true;
+          failureReason = (geminiErr as Error).message === 'gemini_timeout' ? 'timeout' : 'gemini_error';
+          guardrailLog = guardrail;
         }
       }
 
       const latencyMs = Date.now() - startTime;
 
-      // Persist — backward compatible: mirror=echo, question=next
+      // Persist — round insert first (need roundData.id for response), then parallelize the rest
+      // SLO targets (see IMPLEMENTATION_PLAYBOOK.md):
+      //   P95 round response (client transcript): < 5s
+      //   P95 round response (Whisper): < 10s
+      //   Fallback rate: < 5%
+      const dbStart = Date.now();
       const { data: roundData, error: roundError } = await supabase
         .from('round_rounds')
         .insert({
@@ -221,30 +260,46 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
 
       if (roundError) throw roundError;
 
-      // Update session
-      await supabase
-        .from('round_sessions')
-        .update({
-          total_rounds: roundNum,
-          session_memory: tcResponse.memory,
-        })
-        .eq('id', session_id);
-
-      // Log event
-      await supabase.from('round_events').insert({
-        session_id,
-        event_type: 'round_completed',
-        round_number: roundNum,
-        data: {
-          latency_ms: latencyMs,
-          used_fallback: usedFallback,
-          used_whisper: usedWhisper,
-          transcript_length: finalTranscript.length,
-          prompt_version: 'tc-v1',
-          mode_primary: tcResponse.mode.primary,
-          is_crisis: tcResponse.is_crisis,
-        },
-      });
+      // Session update + event insert — parallelized (results not needed for API response)
+      await Promise.all([
+        supabase
+          .from('round_sessions')
+          .update({
+            total_rounds: roundNum,
+            session_memory: tcResponse.memory,
+          })
+          .eq('id', session_id),
+        supabase.from('round_events').insert({
+          session_id,
+          event_type: 'round_completed',
+          round_number: roundNum,
+          data: {
+            latency_ms: latencyMs,
+            gemini_latency_ms: geminiLatencyMs,
+            db_latency_ms: Date.now() - dbStart,
+            used_fallback: usedFallback,
+            used_whisper: usedWhisper,
+            transcript_length: finalTranscript.length,
+            prompt_version: 'tc-v1',
+            mode_primary: tcResponse.mode.primary,
+            is_crisis: tcResponse.is_crisis,
+            prompt_tokens: promptTokens,
+            output_tokens: outputTokens,
+            // Phase 2 telemetry
+            regex_high: crisisSignal.highConfidence,
+            regex_low: crisisSignal.lowConfidence,
+            matched_patterns: crisisSignal.matchedPatterns,
+            llm_is_crisis: llmIsCrisis,
+            crisis_source: crisisSource,
+            guardrail_mode: guardrailLog,
+            sensitive_topic: sensitiveTopic.topicLabel,
+            pull_back_detected: pullBack.detected,
+            pull_back_signals: pullBack.signals,
+            short_response_threshold: 30,
+            failure_reason: failureReason,
+          },
+        }),
+      ]);
 
       // Response: includes both TC fields and backward-compatible mirror/question
       res.json({
@@ -302,7 +357,8 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
 
     const latencyMs = Date.now() - startTime;
 
-    // --- Persist ---
+    // --- Persist (round insert first, then parallelize session update + event) ---
+    const dbStart = Date.now();
     const { data: roundData, error: roundError } = await supabase
       .from('round_rounds')
       .insert({
@@ -325,27 +381,28 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
 
     if (roundError) throw roundError;
 
-    // Update session
-    await supabase
-      .from('round_sessions')
-      .update({
-        total_rounds: roundNum,
-        session_memory: response.memory,
-      })
-      .eq('id', session_id);
-
-    // Log event
-    await supabase.from('round_events').insert({
-      session_id,
-      event_type: 'round_completed',
-      round_number: roundNum,
-      data: {
-        latency_ms: latencyMs,
-        used_fallback: usedFallback,
-        used_whisper: usedWhisper,
-        transcript_length: finalTranscript.length,
-      },
-    });
+    // Session update + event insert — parallelized (results not needed for API response)
+    await Promise.all([
+      supabase
+        .from('round_sessions')
+        .update({
+          total_rounds: roundNum,
+          session_memory: response.memory,
+        })
+        .eq('id', session_id),
+      supabase.from('round_events').insert({
+        session_id,
+        event_type: 'round_completed',
+        round_number: roundNum,
+        data: {
+          latency_ms: latencyMs,
+          db_latency_ms: Date.now() - dbStart,
+          used_fallback: usedFallback,
+          used_whisper: usedWhisper,
+          transcript_length: finalTranscript.length,
+        },
+      }),
+    ]);
 
     res.json({
       round_id: roundData.id,
@@ -499,6 +556,510 @@ router.patch('/round/:id', requireAuth, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Update round error:', err);
     res.status(500).json({ error: 'Failed to update round' });
+  }
+});
+
+// POST /round/:id/reroll — Reroll question for a round
+router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response) => {
+  const startTime = Date.now();
+
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const roundId = req.params.id;
+
+    // 1. Fetch existing round
+    const { data: round, error: roundFetchError } = await supabase
+      .from('round_rounds')
+      .select('id, session_id, round_number, transcript, mirror, question, question_angle, reroll_count, response_v2, memory')
+      .eq('id', roundId)
+      .single();
+
+    if (roundFetchError || !round) {
+      res.status(404).json({ error: 'ラウンドが見つかりません' });
+      return;
+    }
+
+    // 2. Ownership check
+    const { data: session } = await supabase
+      .from('round_sessions')
+      .select('user_id')
+      .eq('id', round.session_id)
+      .single();
+
+    if (!session) {
+      res.status(404).json({ error: 'セッションが見つかりません' });
+      return;
+    }
+
+    if (session.user_id !== null && authReq.userId !== session.user_id) {
+      res.status(403).json({ error: '権限がありません' });
+      return;
+    }
+    if (session.user_id === null && authReq.userId !== 'dev-user') {
+      res.status(403).json({ error: '権限がありません' });
+      return;
+    }
+
+    // 3. Guards
+    // Latest round only
+    const { data: maxRoundRow } = await supabase
+      .from('round_rounds')
+      .select('round_number')
+      .eq('session_id', round.session_id)
+      .order('round_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (maxRoundRow && maxRoundRow.round_number !== round.round_number) {
+      res.status(409).json({ error: '最新ラウンドのみリロール可能' });
+      return;
+    }
+
+    // Reroll limit
+    if (round.reroll_count >= 1) {
+      res.status(409).json({ error: 'リロールは1回まで' });
+      return;
+    }
+
+    // Crisis guard
+    if (round.response_v2?.is_crisis === true) {
+      res.status(403).json({ error: 'Crisis応答はリロール不可' });
+      return;
+    }
+
+    // 4. Get base memory (one-before)
+    let baseMemory: SessionMemory | null = null;
+    if (round.round_number >= 2) {
+      const { data: prevRound } = await supabase
+        .from('round_rounds')
+        .select('memory')
+        .eq('session_id', round.session_id)
+        .eq('round_number', round.round_number - 1)
+        .single();
+      baseMemory = prevRound?.memory || null;
+    }
+
+    // 5. Sibling rounds for context
+    const { data: siblings } = await supabase
+      .from('round_rounds')
+      .select('question, question_rating')
+      .eq('session_id', round.session_id)
+      .lt('round_number', round.round_number)
+      .order('round_number', { ascending: true });
+
+    const previousQuestions = (siblings || []).map((s: { question: string }) => s.question);
+    const previousRatings = (siblings || []).map((s: { question_rating: QuestionRating | null }) => s.question_rating);
+
+    // Save original values for event (echo/sense/next live in response_v2 JSONB, not top-level columns)
+    const originalEcho = round.response_v2?.echo || round.mirror;
+    const originalSense = round.response_v2?.sense || '';
+    const originalNext = round.response_v2?.next || round.question;
+    const originalQuestion = round.question;
+    const originalAngle = round.question_angle;
+
+    // Helper to build reroll update fields
+    // Note: echo/sense/next are NOT top-level DB columns — they live in response_v2 JSONB
+    // Top-level backward-compat columns are mirror (= echo) and question (= next)
+    function buildRerollUpdateFields(
+      response: TurnResponseV2,
+      opts: { usedFallback: boolean; latencyMs: number; questionAngle: string },
+    ) {
+      return {
+        mirror: response.echo,
+        question: response.next,
+        response_v2: {
+          echo: response.echo,
+          sense: response.sense,
+          next: response.next,
+          mode: response.mode,
+          is_crisis: response.is_crisis,
+        },
+        question_angle: opts.questionAngle,
+        memory: response.memory,
+        question_rating: null,
+        used_fallback: opts.usedFallback,
+        latency_ms: opts.latencyMs,
+      };
+    }
+
+    // Helper for conditional UPDATE with race protection
+    async function applyRerollUpdate(fields: Record<string, unknown>) {
+      const { data: updated, error: updateError } = await supabase
+        .from('round_rounds')
+        .update({
+          ...fields,
+          reroll_count: (round!.reroll_count || 0) + 1,
+        })
+        .eq('id', roundId)
+        .eq('reroll_count', 0)
+        .select()
+        .single();
+
+      if (updateError || !updated) {
+        return null; // race condition
+      }
+      return updated;
+    }
+
+    // 6. Crisis detection
+    const crisisSignal = detectCrisisRegex(round.transcript);
+    const sensitiveTopic: SensitiveTopicResult = detectSensitiveTopic(round.transcript);
+    const pullBack: PullBackSignal = detectPullBack(round.transcript, round.round_number, previousRatings);
+
+    if (crisisSignal.highConfidence) {
+      // High-conf regex crisis redirect
+      const crisisResponse = generateCrisisResponse(round.transcript);
+      const fields = buildRerollUpdateFields(crisisResponse, {
+        usedFallback: false,
+        latencyMs: Date.now() - startTime,
+        questionAngle: 'crisis_fixed',
+      });
+      // Override memory to baseMemory for crisis
+      fields.memory = baseMemory as unknown as TurnResponseV2['memory'];
+
+      const updated = await applyRerollUpdate(fields);
+      if (!updated) {
+        res.status(409).json({ error: 'リロールの競合が発生しました' });
+        return;
+      }
+
+      // Update session memory
+      await supabase
+        .from('round_sessions')
+        .update({ session_memory: baseMemory })
+        .eq('id', round.session_id);
+
+      // Event
+      await supabase.from('round_events').insert({
+        session_id: round.session_id,
+        event_type: 'round_rerolled',
+        round_number: round.round_number,
+        data: {
+          original_echo: originalEcho,
+          original_sense: originalSense,
+          original_next: originalNext,
+          original_question: originalQuestion,
+          original_angle: originalAngle,
+          new_angle: 'crisis_fixed',
+          new_question: crisisResponse.next,
+          latency_ms: Date.now() - startTime,
+          used_fallback: false,
+          crisis_redirected: true,
+          crisis_source: 'regex_high',
+        },
+      });
+
+      res.json({
+        round_id: updated.id,
+        transcript: round.transcript,
+        mirror: crisisResponse.echo,
+        question: crisisResponse.next,
+        echo: crisisResponse.echo,
+        sense: crisisResponse.sense,
+        next: crisisResponse.next,
+        is_crisis: true,
+        memory: baseMemory,
+        latency_ms: Date.now() - startTime,
+        used_fallback: false,
+      });
+      return;
+    }
+
+    // 7. Normal reroll path
+    const guardrail: GuardrailMode = resolveGuardrail(sensitiveTopic, pullBack);
+    const context = buildContextV2(
+      round.transcript,
+      baseMemory,
+      round.round_number,
+      previousQuestions,
+      previousRatings,
+    );
+    const rerollConstraint = buildRerollConstraint(
+      originalNext || originalQuestion,
+      originalAngle || 'blindspot',
+    );
+    const prompt = buildThinkingCompanionPrompt(
+      context,
+      round.round_number,
+      guardrail,
+      sensitiveTopic.topicLabel,
+      rerollConstraint,
+    );
+
+    // 8. Gemini call
+    let tcResponse: TurnResponseV2;
+    let usedFallback = false;
+    let geminiLatencyMs = 0;
+    let failureReason: string | null = null;
+
+    try {
+      const geminiStart = Date.now();
+      const geminiResult = await Promise.race([
+        generateRoundContentWithUsage(prompt),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('gemini_timeout')), GEMINI_TIMEOUT_MS),
+        ),
+      ]);
+      geminiLatencyMs = Date.now() - geminiStart;
+
+      const parsed = parseTurnResponseV2(geminiResult.text);
+
+      if (parsed) {
+        // 9a. LLM crisis
+        if (parsed.is_crisis) {
+          const crisisResponse = generateCrisisResponse(round.transcript);
+          const fields = buildRerollUpdateFields(crisisResponse, {
+            usedFallback: false,
+            latencyMs: Date.now() - startTime,
+            questionAngle: 'crisis_fixed',
+          });
+          fields.memory = baseMemory as unknown as TurnResponseV2['memory'];
+
+          const updated = await applyRerollUpdate(fields);
+          if (!updated) {
+            res.status(409).json({ error: 'リロールの競合が発生しました' });
+            return;
+          }
+
+          await supabase
+            .from('round_sessions')
+            .update({ session_memory: baseMemory })
+            .eq('id', round.session_id);
+
+          await supabase.from('round_events').insert({
+            session_id: round.session_id,
+            event_type: 'round_rerolled',
+            round_number: round.round_number,
+            data: {
+              original_echo: originalEcho,
+              original_sense: originalSense,
+              original_next: originalNext,
+              original_question: originalQuestion,
+              original_angle: originalAngle,
+              new_angle: 'crisis_fixed',
+              new_question: crisisResponse.next,
+              latency_ms: Date.now() - startTime,
+              used_fallback: false,
+              crisis_redirected: true,
+              crisis_source: 'llm',
+            },
+          });
+
+          res.json({
+            round_id: updated.id,
+            transcript: round.transcript,
+            mirror: crisisResponse.echo,
+            question: crisisResponse.next,
+            echo: crisisResponse.echo,
+            sense: crisisResponse.sense,
+            next: crisisResponse.next,
+            is_crisis: true,
+            memory: baseMemory,
+            latency_ms: Date.now() - startTime,
+            used_fallback: false,
+          });
+          return;
+        }
+
+        // 9c. Normal reroll success
+        tcResponse = parsed;
+      } else {
+        // 9b. Parse failure → fallback
+        console.error('Failed to parse TC reroll response:', geminiResult.text.substring(0, 500));
+        tcResponse = generateFallbackEchoSenseNext(round.transcript, round.round_number, baseMemory);
+        usedFallback = true;
+        failureReason = 'parse_failed';
+      }
+    } catch (geminiErr) {
+      // 9b. Gemini error → fallback
+      geminiLatencyMs = Date.now() - startTime;
+      console.error('Gemini TC reroll failed:', geminiErr);
+      tcResponse = generateFallbackEchoSenseNext(round.transcript, round.round_number, baseMemory);
+      usedFallback = true;
+      failureReason = (geminiErr as Error).message === 'gemini_timeout' ? 'timeout' : 'gemini_error';
+    }
+
+    const latencyMs = Date.now() - startTime;
+
+    // For fallback: don't advance session memory
+    const newMemory = usedFallback ? baseMemory : tcResponse.memory;
+
+    const fields = buildRerollUpdateFields(tcResponse, {
+      usedFallback,
+      latencyMs,
+      questionAngle: tcResponse.memory.recent_question_angle,
+    });
+    if (usedFallback) {
+      fields.memory = baseMemory as unknown as TurnResponseV2['memory'];
+    }
+
+    const updated = await applyRerollUpdate(fields);
+    if (!updated) {
+      res.status(409).json({ error: 'リロールの競合が発生しました' });
+      return;
+    }
+
+    // 10. Update session memory
+    await supabase
+      .from('round_sessions')
+      .update({ session_memory: newMemory })
+      .eq('id', round.session_id);
+
+    // 11. Event
+    await supabase.from('round_events').insert({
+      session_id: round.session_id,
+      event_type: 'round_rerolled',
+      round_number: round.round_number,
+      data: {
+        original_echo: originalEcho,
+        original_sense: originalSense,
+        original_next: originalNext,
+        original_question: originalQuestion,
+        original_angle: originalAngle,
+        new_angle: tcResponse.memory.recent_question_angle,
+        new_question: tcResponse.next,
+        latency_ms: latencyMs,
+        gemini_latency_ms: geminiLatencyMs,
+        used_fallback: usedFallback,
+        failure_reason: failureReason,
+        guardrail_mode: guardrail,
+        sensitive_topic: sensitiveTopic.topicLabel,
+        pull_back_detected: pullBack.detected,
+        crisis_redirected: false,
+      },
+    });
+
+    // 12. Response
+    res.json({
+      round_id: updated.id,
+      transcript: round.transcript,
+      mirror: tcResponse.echo,
+      question: tcResponse.next,
+      echo: tcResponse.echo,
+      sense: tcResponse.sense,
+      next: tcResponse.next,
+      is_crisis: tcResponse.is_crisis,
+      memory: usedFallback ? baseMemory : tcResponse.memory,
+      latency_ms: latencyMs,
+      used_fallback: usedFallback,
+    });
+  } catch (err) {
+    console.error('Reroll error:', err);
+    res.status(500).json({ error: 'リロールに失敗しました' });
+  }
+});
+
+// DELETE /round/:id — Delete (reset) a round
+router.delete('/round/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const roundId = req.params.id;
+
+    // 1. Fetch round
+    const { data: round, error: roundFetchError } = await supabase
+      .from('round_rounds')
+      .select('id, session_id, round_number, transcript_length, response_v2')
+      .eq('id', roundId)
+      .single();
+
+    if (roundFetchError || !round) {
+      res.status(404).json({ error: 'ラウンドが見つかりません' });
+      return;
+    }
+
+    // 2. Ownership check
+    const { data: session } = await supabase
+      .from('round_sessions')
+      .select('user_id')
+      .eq('id', round.session_id)
+      .single();
+
+    if (!session) {
+      res.status(404).json({ error: 'セッションが見つかりません' });
+      return;
+    }
+
+    if (session.user_id !== null && authReq.userId !== session.user_id) {
+      res.status(403).json({ error: '権限がありません' });
+      return;
+    }
+    if (session.user_id === null && authReq.userId !== 'dev-user') {
+      res.status(403).json({ error: '権限がありません' });
+      return;
+    }
+
+    // 3. Guards
+    if (round.response_v2?.is_crisis === true) {
+      res.status(403).json({ error: 'Crisis応答は取り消し不可' });
+      return;
+    }
+
+    // Latest round only
+    const { data: maxRoundRow } = await supabase
+      .from('round_rounds')
+      .select('round_number')
+      .eq('session_id', round.session_id)
+      .order('round_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (maxRoundRow && maxRoundRow.round_number !== round.round_number) {
+      res.status(409).json({ error: '最新ラウンドのみ取り消し可能' });
+      return;
+    }
+
+    // 4. Memory rollback
+    let previousMemory: SessionMemory | null = null;
+    if (round.round_number >= 2) {
+      const { data: prevRound } = await supabase
+        .from('round_rounds')
+        .select('memory')
+        .eq('session_id', round.session_id)
+        .eq('round_number', round.round_number - 1)
+        .single();
+      previousMemory = prevRound?.memory || null;
+    }
+
+    // 5. Delete with race protection
+    const { data: deleted, error: deleteError } = await supabase
+      .from('round_rounds')
+      .delete()
+      .eq('id', roundId)
+      .select('id')
+      .single();
+
+    if (deleteError || !deleted) {
+      res.status(409).json({ error: '取り消しの競合が発生しました' });
+      return;
+    }
+
+    // 6. Update session
+    await supabase
+      .from('round_sessions')
+      .update({
+        session_memory: previousMemory,
+        total_rounds: round.round_number - 1,
+      })
+      .eq('id', round.session_id);
+
+    // 7. Event
+    await supabase.from('round_events').insert({
+      session_id: round.session_id,
+      event_type: 'round_reset',
+      round_number: round.round_number,
+      data: {
+        round_id: roundId,
+        session_id: round.session_id,
+        round_number: round.round_number,
+        transcript_length: round.transcript_length,
+      },
+    });
+
+    // 8. Response
+    res.json({ memory: previousMemory });
+  } catch (err) {
+    console.error('Delete round error:', err);
+    res.status(500).json({ error: '取り消しに失敗しました' });
   }
 });
 
