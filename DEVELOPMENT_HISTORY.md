@@ -1,5 +1,36 @@
 # Kataru 開発の軌跡
 
+## 2026-03-13: Phase 9 — ユーザー選択式延長
+
+### 概要
+R3完了後にユーザーの意思で1ラウンドずつ最大5ラウンドまで延長できる仕組み。「可変ターン化」ではなく「R3後のユーザー主導延長」。AI終了判定は禁止。
+
+### 変更内容
+1. **Migration**: `015_session_extension.sql` — `max_rounds_allowed INT DEFAULT 3` + CHECK制約(3-5) + `round_number` CHECK(1-5) + BEFORE INSERT トリガー（R4/R5を`max_rounds_allowed`で原子的に拒否）+ `extend_session()` RPC
+2. **Backend feature flag**: `PHASE9_EXTENSION=off|dev|live`（デフォルト`off`）
+3. **POST /extend**: `extend_session()` RPC を呼び出し、原子的に `max_rounds_allowed` を +1（最大5）。ownership + limit + update が単一DB往復
+4. **POST /extension-event**: テレメトリ専用（`extension_prompt_shown`, `extension_declined`）
+5. **POST /question 強化**: roundNum 1-5 バリデーション + feature flag チェック + DB トリガー拒否を 409 `ROUND_EXTENSION_REQUIRED` で返す（500にしない）
+6. **Frontend 状態機械**: Phase型に`'extending'`追加、`maxRoundsAllowed`状態、`handleExtend`/`handleEndSession`ハンドラー
+7. **Extending UI**: GlassCard + 「もう1ラウンド続ける」/「セッションをまとめる」ボタン、R4完了後は残1ラウンド明示
+8. **プログレスドット**: 常に5ドット表示、未解放枠は`opacity: 0.05`、extend成功で浮き上がる
+9. **プロンプト補足**: scopeGuide に R4(展開) / R5(統合) 追加、buildContextV2 のラウンド表示を動的化、mode×ラウンド補足に R4/R5 追加
+10. **テレメトリ**: `extension_prompt_shown`, `extension_accepted`, `extension_declined`, `round_completed.is_extended_round`, `summary_generated.total_rounds_completed/session_was_extended`
+
+### 設計判断
+- **制御状態の真実はサーバー**: `max_rounds_allowed` が DB source of truth。クライアントは反映のみ
+- **DB トリガーが最終防衛線**: extend を通らない R4/R5 は INSERT 自体が拒否される
+- **Fail Closed**: ブラウザリロード → 全状態リセット → sessionId=null → R4/R5送信経路なし
+- **Phase 7 仕様維持**: clampMaybe の R3限定チェックは変更なし
+- **追加 DB read 禁止**: extend API がライフサイクルゲート、DB トリガーで整合性完結
+
+### Feature Flag（PHASE9_EXTENSION）
+- `off`: POST /extend は 404、roundNum > 3 は 400
+- `dev`: 延長有効（開発テスト）
+- `live`: 本番有効
+
+---
+
 ## 2026-03-13: Phase 8 — User Profile / Trust Memory
 
 ### 概要

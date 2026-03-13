@@ -264,7 +264,14 @@ export function buildContextV2(
   previousRatings?: (QuestionRating | null)[],
 ): string {
   const processed = preprocessTranscript(transcript);
-  let ctx = `## ラウンド: ${roundNumber} / 3\n\n`;
+  let ctx: string;
+  if (roundNumber <= 3) {
+    ctx = `## ラウンド: ${roundNumber} / 3\n\n`;
+  } else if (roundNumber === 4) {
+    ctx = `## ラウンド: 4（延長: 展開）\n\n`;
+  } else {
+    ctx = `## ラウンド: 5 / 5（延長: 統合・最終）\n\n`;
+  }
 
   if (previousQuestions?.length > 0) {
     ctx += `## 前のラウンド:\n`;
@@ -338,8 +345,14 @@ export function buildThinkingCompanionPrompt(
       : roundNumber === 2
         ? `**深掘り**: 構造的な障壁・矛盾・トレードオフに焦点を当てる。
 テクニック: 仮定の排除（もしXがなかったら？）、他者視点（相手はどう見ている？）、本音確認（本当はどうしたい？）`
-        : `**収束**: 動けるようになる問いを投げる。
-テクニック: 最小ステップ（今日中にできる一歩は？）、判断基準（何が決まれば動ける？）、コミット（誰に宣言する？）`;
+        : roundNumber === 3
+          ? `**収束**: 動けるようになる問いを投げる。
+テクニック: 最小ステップ（今日中にできる一歩は？）、判断基準（何が決まれば動ける？）、コミット（誰に宣言する？）`
+          : roundNumber === 4
+            ? `**展開**: ユーザーが延長を選択した。これまで触れなかった角度、未探索の前提に光を当てる。
+テクニック: 別の関係者視点、時間軸の変更（5年後は？）、前提の逆転（もし逆だったら？）`
+            : `**統合**: 全体俯瞰、複数ラウンドの気づきを統合する問い。
+テクニック: 最も大きい発見は何か、セッション全体を通じたパターン、持ち帰りの核心`;
 
   const guardrailConstraint = buildGuardrailConstraint(guardrailMode, topicLabel);
 
@@ -483,6 +496,10 @@ ${scopeGuide}
 - R1 + release → 一番感情が強い部分を特定する問い
 - R3 + release → 行動提案ではなく、感情の対象・時間・距離感を静かに絞る
 - R3 + depth → 持ち帰りの問いで収束（行動ステップ不要）
+- R4 + structure → 未検討の選択肢や制約を掘り出す問い
+- R4 + release → 別の感情や関連する経験に光を当てる
+- R4 + depth → まだ検証していない前提やパターンの例外を問う
+- R5 + any mode → 統合・持ち帰り寄りの問い（新しい角度の探索は控える）
 上記以外はmode別ルールとラウンド戦略の組み合わせで自然に導出すること。
 
 ## Few-shot例（mode別 — 正例2つ + NG例1つ）

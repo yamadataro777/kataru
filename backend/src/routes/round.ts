@@ -58,6 +58,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 const GEMINI_TIMEOUT_MS = 12000;
 const SUMMARY_TIMEOUT_MS = 15000;
 
+// --- Phase 9: Extension feature flag ---
+type Phase9Flag = 'off' | 'dev' | 'live';
+function getPhase9Flag(): Phase9Flag {
+  const val = process.env.PHASE9_EXTENSION || 'off';
+  if (val === 'dev' || val === 'live') return val;
+  return 'off';
+}
+
 // --- Phase 6: Depth helpers ---
 
 /**
@@ -157,6 +165,18 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
     const usePrevRatings = process.env.ROUND_USE_PREVIOUS_RATINGS !== 'false';
 
     const roundNum = parseInt(round_number) || 1;
+
+    // Phase 9: round number validation
+    if (roundNum < 1 || roundNum > 5) {
+      res.status(400).json({ error: 'round_number must be between 1 and 5' });
+      return;
+    }
+    const phase9Flag = getPhase9Flag();
+    if (phase9Flag === 'off' && roundNum > 3) {
+      res.status(400).json({ error: 'Extension not enabled' });
+      return;
+    }
+
     const prevQuestions: string[] = previous_questions ? JSON.parse(previous_questions) : [];
     const prevRatings: (QuestionRating | null)[] = previousRatingsRaw
       ? JSON.parse(previousRatingsRaw)
@@ -389,7 +409,14 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
         .select()
         .single();
 
-      if (roundError) throw roundError;
+      // Phase 9: DB trigger rejection → 409 (not 500)
+      if (roundError) {
+        if (roundError.code === '23514' /* check_violation */) {
+          res.status(409).json({ error: 'ROUND_EXTENSION_REQUIRED' });
+          return;
+        }
+        throw roundError;
+      }
 
       // Session update + event insert — parallelized (results not needed for API response)
       await Promise.all([
@@ -432,6 +459,8 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             pull_back_signals: pullBack.signals,
             short_response_threshold: 30,
             failure_reason: failureReason,
+            // Phase 9 telemetry
+            is_extended_round: roundNum > 3,
             // Phase 8 telemetry
             experiment_stage: trustMemoryStage,
             inject_variant: injectVariant,
@@ -525,7 +554,14 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
       .select()
       .single();
 
-    if (roundError) throw roundError;
+    // Phase 9: DB trigger rejection → 409 (not 500)
+    if (roundError) {
+      if (roundError.code === '23514' /* check_violation */) {
+        res.status(409).json({ error: 'ROUND_EXTENSION_REQUIRED' });
+        return;
+      }
+      throw roundError;
+    }
 
     // Session update + event insert — parallelized (results not needed for API response)
     await Promise.all([
@@ -794,6 +830,9 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
         latency_ms: latencyMs,
         next_step_type: summary.next_step.type,
         quote_source_mode: quoteSourceMode,
+        // Phase 9 telemetry
+        total_rounds_completed: rounds.length,
+        session_was_extended: rounds.length > 3,
       },
     });
 
@@ -875,6 +914,84 @@ router.post('/gate8-evaluation', requireAuth, async (req: Request, res: Response
   } catch (err) {
     console.error('Gate 8 evaluation error:', err);
     res.status(500).json({ error: 'Failed to save evaluation' });
+  }
+});
+
+// POST /extend — Phase 9: Extend session by 1 round (max 5)
+router.post('/extend', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const phase9Flag = getPhase9Flag();
+    if (phase9Flag === 'off') {
+      res.status(404).json({ error: 'Extension not available' });
+      return;
+    }
+
+    const authReq = req as AuthenticatedRequest;
+    const { session_id } = req.body;
+
+    if (!session_id) {
+      res.status(400).json({ error: 'session_id is required' });
+      return;
+    }
+
+    // Atomic extend via RPC — ownership + limit + update in single DB round-trip
+    const userId = authReq.userId === 'dev-user'
+      ? '00000000-0000-0000-0000-000000000000'
+      : authReq.userId;
+
+    const { data, error } = await supabase.rpc('extend_session', {
+      p_session_id: session_id,
+      p_user_id: userId,
+    });
+
+    if (error) {
+      if (error.code === '23514' /* check_violation */) {
+        res.status(409).json({ error: 'Extension not allowed: already at max or session not found' });
+        return;
+      }
+      throw error;
+    }
+
+    // Telemetry
+    await supabase.from('round_events').insert({
+      session_id,
+      event_type: 'extension_accepted',
+      data: { max_rounds_allowed: data },
+    });
+
+    res.json({ max_rounds_allowed: data });
+  } catch (err) {
+    console.error('Extend session error:', err);
+    res.status(500).json({ error: 'Failed to extend session' });
+  }
+});
+
+// POST /extension-event — Phase 9: Extension telemetry (fire-and-forget from frontend)
+router.post('/extension-event', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { session_id, event_type } = req.body;
+
+    if (!session_id || !event_type) {
+      res.status(400).json({ error: 'session_id and event_type are required' });
+      return;
+    }
+
+    const allowedEvents = ['extension_prompt_shown', 'extension_declined'];
+    if (!allowedEvents.includes(event_type)) {
+      res.status(400).json({ error: 'Invalid event_type' });
+      return;
+    }
+
+    await supabase.from('round_events').insert({
+      session_id,
+      event_type,
+      data: {},
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Extension event error:', err);
+    res.status(500).json({ error: 'Failed to save event' });
   }
 });
 

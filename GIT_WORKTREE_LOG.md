@@ -1,9 +1,15 @@
 # Git Worktree Log
 
+## 2026-03-13 (Phase 9)
+- **Branch**: main
+- **Action**: commit
+- **Commit**: (pending)
+- **Changes**: 015_session_extension.sql（max_rounds_allowed + CHECK + トリガー + extend_session RPC）、round.ts extend/extension-event エンドポイント + feature flag + 409 handling + telemetry、thinking-companion-prompt.ts R4/R5 scopeGuide + buildContextV2 動的化、record/page.tsx extending Phase + 5ドット + handleExtend/handleEndSession、api.ts extendRoundSession/submitExtensionEvent
+
 ## 2026-03-13 (Phase 8)
 - **Branch**: main
 - **Action**: commit + push
-- **Commit**: (pending) — feat: Phase 8 Trust Memory — shadow mode蓄積・Gate 8 A/B基盤
+- **Commit**: 7a3e717 — feat: Phase 8 Trust Memory — shadow mode蓄積・Gate 8 A/B基盤
 - **Changes**: 014_trust_memory.sql、trust-memory.ts（テーマ抽出/decay/CAS）、round.ts R1 preload+snapshot+summary更新+gate8-evaluation、prompt trustMemoryHint注入、auth.ts GET/DELETE trust-memory、api.ts Trust Memory API、Settings MEMORY UI、record Gate8評価UI
 
 ## 2026-03-13 (Phase 7)

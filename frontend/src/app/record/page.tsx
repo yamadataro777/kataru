@@ -18,13 +18,15 @@ import {
   rerollRoundQuestion,
   deleteRoundRound,
   submitGate8Evaluation,
+  extendRoundSession,
+  submitExtensionEvent,
   RoundSessionMemory,
 } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 // --- Types ---
 
-type Phase = 'idle' | 'recording' | 'analyzing' | 'question' | 'summarizing' | 'summary';
+type Phase = 'idle' | 'recording' | 'analyzing' | 'question' | 'extending' | 'summarizing' | 'summary';
 type QuestionRating = 'forward' | 'neutral' | 'off';
 
 interface RoundResult {
@@ -70,11 +72,15 @@ function isSummaryV2(s: SummaryData): s is SummaryDataV2 {
 
 // --- Constants ---
 
-const ROUND_LABELS = ['外化', '深掘り', '収束'];
+const BASE_ROUND_COUNT = 3;
+const MAX_ROUND_COUNT = 5;
+const ROUND_LABELS = ['外化', '深掘り', '収束', '展開', '統合'];
 const ROUND_DESCRIPTIONS = [
   '自由に話してください。頭の中にあることを声に出しましょう。',
   'AIの問いを受けて、さらに掘り下げてみましょう。',
   '核心に向かって、考えを絞り込みましょう。',
+  'さらに広げて、新しい角度から探ってみましょう。',
+  '全体を見渡して、最後にまとめましょう。',
 ];
 const DURATIONS = [60, 90, 120] as const;
 
@@ -89,6 +95,7 @@ export default function RecordPage() {
   const [roundNumber, setRoundNumber] = useState(1);
   const [selectedDuration, setSelectedDuration] = useState<number>(90);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [maxRoundsAllowed, setMaxRoundsAllowed] = useState(BASE_ROUND_COUNT);
 
   // Round data
   const [rounds, setRounds] = useState<RoundResult[]>([]);
@@ -137,10 +144,11 @@ export default function RecordPage() {
     rounds: [] as RoundResult[],
     sessionMemory: null as RoundSessionMemory | null,
     duration: 0,
+    maxRoundsAllowed: BASE_ROUND_COUNT,
   });
   useEffect(() => {
-    stateRef.current = { sessionId, roundNumber, rounds, sessionMemory, duration };
-  }, [sessionId, roundNumber, rounds, sessionMemory, duration]);
+    stateRef.current = { sessionId, roundNumber, rounds, sessionMemory, duration, maxRoundsAllowed };
+  }, [sessionId, roundNumber, rounds, sessionMemory, duration, maxRoundsAllowed]);
 
   // Computed
   const energyLevel = useMemo(() => {
@@ -380,9 +388,19 @@ export default function RecordPage() {
   }, [rounds]);
 
   const handleNextRound = useCallback(() => {
-    if (roundNumber >= 3) {
+    const finishedRound = roundNumber;
+    if (finishedRound >= MAX_ROUND_COUNT) {
+      // R5完了: 硬い天井 → summary
       handleGenerateSummary();
+    } else if (finishedRound >= BASE_ROUND_COUNT) {
+      // R3 or R4 完了: 延長判断ポイント → extending UI
+      setPhase('extending');
+      // Telemetry: extending UI 表示（遷移時1回のみ）
+      if (stateRef.current.sessionId) {
+        submitExtensionEvent(stateRef.current.sessionId, 'extension_prompt_shown').catch(() => {});
+      }
     } else {
+      // R1, R2: 自動で次へ
       setRoundNumber((prev) => prev + 1);
       setPhase('idle');
       isAnalyzingRef.current = false;
@@ -421,6 +439,27 @@ export default function RecordPage() {
       setPhase('summary');
     }
   }, []);
+
+  const handleExtend = useCallback(async () => {
+    setError(null);
+    try {
+      const result = await extendRoundSession(stateRef.current.sessionId!);
+      setMaxRoundsAllowed(result.max_rounds_allowed);
+      setRoundNumber(prev => prev + 1);
+      setPhase('idle');
+      isAnalyzingRef.current = false;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '延長に失敗しました');
+    }
+  }, []);
+
+  const handleEndSession = useCallback(() => {
+    // Telemetry: extension_declined (fire-and-forget)
+    if (stateRef.current.sessionId) {
+      submitExtensionEvent(stateRef.current.sessionId, 'extension_declined').catch(() => {});
+    }
+    handleGenerateSummary();
+  }, [handleGenerateSummary]);
 
   const handleRateSession = useCallback(
     (rating: number) => {
@@ -472,7 +511,11 @@ export default function RecordPage() {
                 </>
               )}
               <span className="text-[10px] tracking-[2px] text-neon-cyan opacity-75">
-                ROUND {roundNumber} / 3 — {ROUND_LABELS[roundNumber - 1]}
+                {phase === 'extending'
+                  ? `${roundNumber}ラウンド完了`
+                  : roundNumber > BASE_ROUND_COUNT
+                    ? `ROUND ${roundNumber} — ${ROUND_LABELS[roundNumber - 1]}`
+                    : `ROUND ${roundNumber} / ${BASE_ROUND_COUNT} — ${ROUND_LABELS[roundNumber - 1]}`}
               </span>
             </div>
             {(phase === 'idle' || phase === 'summary') && (
@@ -486,21 +529,23 @@ export default function RecordPage() {
           </div>
         </div>
 
-        {/* Round progress dots */}
+        {/* Round progress dots — always 5, extension slots dim until unlocked */}
         <div className="flex justify-center gap-2 pb-2 relative z-10">
-          {[1, 2, 3].map((r) => (
+          {[1, 2, 3, 4, 5].map((r) => (
             <div
               key={r}
-              className="w-2 h-2 rounded-full transition-all duration-300"
+              className="w-2 h-2 rounded-full transition-all duration-500"
               style={{
                 background:
-                  r < roundNumber
-                    ? 'var(--neon-lime)'
-                    : r === roundNumber
-                      ? 'var(--neon-cyan)'
-                      : 'rgba(255,255,255,0.15)',
+                  r > maxRoundsAllowed
+                    ? 'rgba(255,255,255,0.05)'
+                    : r < roundNumber
+                      ? 'var(--neon-lime)'
+                      : r === roundNumber
+                        ? 'var(--neon-cyan)'
+                        : 'rgba(255,255,255,0.15)',
                 boxShadow:
-                  r <= roundNumber
+                  r <= roundNumber && r <= maxRoundsAllowed
                     ? `0 0 6px ${r < roundNumber ? 'var(--neon-lime)' : 'var(--neon-cyan)'}`
                     : 'none',
               }}
@@ -791,9 +836,13 @@ export default function RecordPage() {
               {/* Next button — always visible, rating is optional */}
               <NeonButton
                 onClick={handleNextRound}
-                variant={roundNumber >= 3 ? 'lime' : 'cyan'}
+                variant={roundNumber >= MAX_ROUND_COUNT ? 'lime' : roundNumber >= BASE_ROUND_COUNT ? 'cyan' : 'cyan'}
               >
-                {roundNumber >= 3 ? 'セッションをまとめる' : '次のラウンドへ'}
+                {roundNumber >= MAX_ROUND_COUNT
+                  ? 'セッションをまとめる'
+                  : roundNumber >= BASE_ROUND_COUNT
+                    ? '次へ'
+                    : '次のラウンドへ'}
               </NeonButton>
 
               {/* Rating buttons — optional feedback */}
@@ -841,6 +890,34 @@ export default function RecordPage() {
                 >
                   この回答を取り消す
                 </button>
+              )}
+            </div>
+          )}
+
+          {/* ========== EXTENDING PHASE (Phase 9) ========== */}
+          {phase === 'extending' && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-6">
+              <GlassCard variant="cyan" className="w-full p-5">
+                <p className="text-center text-sm text-hud-white leading-relaxed mb-1">
+                  {roundNumber}ラウンド完了
+                </p>
+                <p className="text-center text-xs text-hud-white opacity-60 leading-relaxed">
+                  もう少し話を続けたいですか？
+                </p>
+                {roundNumber >= 4 && (
+                  <p className="text-center text-[10px] text-hud-white opacity-40 mt-2">
+                    あと1ラウンドまで延長できます
+                  </p>
+                )}
+              </GlassCard>
+              <NeonButton onClick={handleExtend} variant="cyan">
+                もう1ラウンド続ける
+              </NeonButton>
+              <NeonButton onClick={handleEndSession} variant="lime">
+                セッションをまとめる
+              </NeonButton>
+              {error && (
+                <p className="text-xs text-neon-magenta text-center">{error}</p>
               )}
             </div>
           )}

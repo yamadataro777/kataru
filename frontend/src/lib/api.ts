@@ -586,6 +586,22 @@ export async function deleteRoundRound(roundId: string): Promise<{ memory: Round
   return request(`/api/round/round/${roundId}`, { method: 'DELETE' });
 }
 
+// === Phase 9: Extension API ===
+
+export async function extendRoundSession(sessionId: string): Promise<{ max_rounds_allowed: number }> {
+  return request('/api/round/extend', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+}
+
+export async function submitExtensionEvent(sessionId: string, eventType: string): Promise<void> {
+  await request('/api/round/extension-event', {
+    method: 'POST',
+    body: JSON.stringify({ session_id: sessionId, event_type: eventType }),
+  });
+}
+
 // === Marketing API ===
 
 export interface MarketingFieldState<T = string | string[] | null> {
