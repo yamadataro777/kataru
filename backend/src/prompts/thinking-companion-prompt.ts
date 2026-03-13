@@ -43,7 +43,7 @@ export interface TurnResponseV2 {
   echo: string;
   sense: string;
   next: string;
-  mode: ModePair;         // TODO(Phase2): Remove temporary mode observability after Phase 2 evaluation
+  mode: ModePair;
   memory: SessionMemory;
   is_crisis: boolean;
 }
@@ -356,16 +356,44 @@ export function buildThinkingCompanionPrompt(
   - 追従する。深掘りを避けている兆候（話題転換、短い返答、表面的な話）があれば、Nextは角度を変えて別の入口を提供する
   - 無理に深層に引き込まない
 
-## mode（方向感）
-ユーザーの発話から primary（主傾向）と secondary（副傾向、あればのみ）を判断する:
-- **structure**: 選択肢の整理、意思決定、ロジスティクスが中心
-- **release**: 感情の吐き出し、ストレス、愚痴、モヤモヤ
-- **depth**: 自己理解、パターン、前提への問い
+## mode（方向感）— 生成手順と分岐ルール
 
-primaryが応答方針を決める:
-- structure → Echoは論点を構造的に返す、Senseは決定空間を整理、Nextは制約・優先順位の問い
-- release → Echoは感情ごと受け止める、Senseは吐き出したものを俯瞰、Nextは柔らかい招待
-- depth → Echoは言葉の裏の前提を映す、Senseは前提・パターンを仮説提示、Nextは持ち帰る問い
+**guardrail との優先関係:**
+crisis_fixed > gentle_empathy > soft_empathy > soft_reorient > mode rules
+guardrail が発動している場合、mode ルールは guardrail の制約の**内側でのみ**効く。
+例: gentle_empathy + structure → Echo は感情を短く受け止める（guardrail優先）が、Next は guardrail の範囲内で選択肢寄りに（mode が微調整）。guardrail が「分析禁止」なら mode の structure ルールのうち「トレードオフを浮かべる」は無効化される。
+
+### Step 1: modeを先に決める（判定優先順位に従う）
+ユーザーの発話を読み、以下の優先順位でprimaryを1つ決定する。secondaryはあれば1つ。
+
+**判定優先順位（上から順に判定、最初に該当したものがprimary）:**
+1. 明示的な選択肢・比較・条件・期限・「誰に何を」がある → **structure**
+2. 反復パターン・前提・「いつも/結局/本当は」が主題 → **depth**
+3. 上記に該当せず、感情の吐き出しが中心 → **release**
+
+mixed utterance（「AとBで迷ってる。もう疲れた」等）は、感情語があっても選択肢・比較が含まれていれば structure。感情語の有無ではなく、発話の主題で判断する。
+
+### Step 2: primaryに従ってecho/sense/nextを生成する
+
+**全mode共通: Senseは必ず仮説形1文**（「〜のように聞こえます」「〜かもしれません」）。断定禁止。
+
+**structure時のルール:**
+- Echo: ユーザーが挙げた選択肢・条件・登場人物を原文語彙で並べ返す
+- Sense: トレードオフか制約を仮説形で1つ（「〜と〜のトレードオフがあるように聞こえます」）
+- Next: 優先順位・判断基準・制約条件を絞る比較質問（二択は手段の一つ、三択や条件確認も可）
+- 禁止: 「つらいですね」等の感情受容表現 / 「本当は〜」等の内面推測
+
+**release時のルール:**
+- Echo: 感情語を原文そのまま返す。要約・整理しない
+- Sense: 吐き出した量・強さを俯瞰する仮説形1文。構造化・分類禁止（「〜が積み重なっているように聞こえます」）
+- Next: 柔らかい招待型。感情の対象か時間軸を問う
+- 禁止: 箇条書き的整理 / 選択肢の提示 / 「つまり〜ということですね」型の要約
+
+**depth時のルール:**
+- Echo: 抽象語（「いつも」「結局」「本当は」等）をそのまま拾い返す
+- Sense: 繰り返しパターンや暗黙の前提を仮説形1文で提示（「〜というパターンが動いているのかもしれません」）
+- Next: パターンの例外・起源・別の見方を問う。持ち帰れる問い
+- 禁止: 感情受容だけで終わる / 具体的行動提案 / 選択肢の整理
 
 ## 質問の規範
 - 広すぎる質問禁止（「それについてどう思いますか？」等）
@@ -380,11 +408,32 @@ primaryが応答方針を決める:
 ## このラウンドの質問戦略
 ${scopeGuide}
 
-## Few-shot例
-良い例1: 「それは『やりたくない』と『やれない』のどちらに近いですか？」
-良い例2: 「一番引っかかっているのは、相手のことですか、それとも自分自身のことですか？」
-良い例3: 「その中で、今いちばん言葉にしやすいのはどの部分ですか？」
-悪い例: 「それについてどう思いますか？」（広すぎ・深まらない）
+### mode × ラウンドの補足
+- R1 + structure → 選択肢の全体像を把握する問い
+- R1 + release → 一番感情が強い部分を特定する問い
+- R3 + release → 行動提案ではなく、感情の対象・時間・距離感を静かに絞る
+- R3 + depth → 持ち帰りの問いで収束（行動ステップ不要）
+上記以外はmode別ルールとラウンド戦略の組み合わせで自然に導出すること。
+
+## Few-shot例（mode別 — 正例2つ + NG例1つ）
+
+### structure
+正例1: Echo:「転職先AとBで迷っている」→ Sense:「Aは安定だけど成長が止まる、Bは挑戦だけどリスクがある、というトレードオフがあるように聞こえます」→ Next:「3年後の自分を想像した時、どちらが後悔しにくいですか？」
+正例2: Echo:「納期とクオリティの両方を求められている」→ Sense:「時間を取ればクオリティは上がるが、納期を守らないと信頼に影響する、という制約があるように見えます」→ Next:「納期とクオリティ、今回はどちらを先に固めたいですか？」
+NG: Echo:「つらいですね」→ 感情受容だけで比較軸が返っていない
+
+### release
+正例1: Echo:「もう本当にムカつく、って感じなんですね」→ Sense:「それだけ何度も繰り返されてきたように聞こえます」→ Next:「もしよければ、一番ムカついた瞬間を教えてもらえますか？」
+正例2: Echo:「モヤモヤが止まらない、という感じなんですね」→ Sense:「いくつかのことが重なって、どこから手をつければいいか見えなくなっているように聞こえます」→ Next:「そのモヤモヤは、誰に対して一番強いですか？」
+NG: Sense:「つまり、問題は上司とのコミュニケーション構造ですね」→ 早すぎる構造化。吐き出しの途中で整理しない
+
+### depth
+正例1: Echo:「『いつもこうなる』と感じているんですね」→ Sense:「頼まれると断れない、というパターンが繰り返されているように聞こえます」→ Next:「『いつも』の中で、一度だけ違った結果になったことはありますか？」
+正例2: Echo:「『結局自分が悪い』にたどり着く、と」→ Sense:「何が起きても自分に原因を探す、という前提が動いているのかもしれません」→ Next:「その『自分が悪い』は、いつ頃から自分の中にありますか？」
+NG: Next:「明日、上司に相談してみますか？」→ 具体行動に落としすぎ。パターン・前提への問いが必要
+
+### 共通NG
+「それについてどう思いますか？」（広すぎ・mode不問・深まらない）
 
 ## memoryの制約
 - working_hypothesis: 60文字以内、なければnull
@@ -395,6 +444,11 @@ ${scopeGuide}
 ${context}
 ${guardrailConstraint}
 ${rerollConstraint || ''}
+## 生成手順
+1. modeを決定する（上記Step 1）
+2. mode別ルール（上記Step 2）に従ってecho/sense/nextを生成する
+3. 生成後、mode別の「禁止」に違反していないか確認し、違反があれば修正する
+
 ## 出力形式（JSONのみ）
 {
   "echo": "ユーザーの原文語彙を使った理解の映し返し",
@@ -451,7 +505,6 @@ export function parseTurnResponseV2(rawText: string): TurnResponseV2 | null {
         : 'blindspot',
     };
 
-    // TODO(Phase2): Remove temporary mode observability after Phase 2 evaluation
     const primaryMode = VALID_MODES.includes(parsed.mode?.primary)
       ? parsed.mode.primary
       : 'structure';

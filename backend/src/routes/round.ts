@@ -44,6 +44,7 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 const GEMINI_TIMEOUT_MS = 12000;
+const SUMMARY_TIMEOUT_MS = 15000;
 
 // POST /session — Create round session
 router.post('/session', requireAuth, async (req: Request, res: Response) => {
@@ -478,7 +479,7 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
         const geminiResult = await Promise.race([
           generateContent(prompt),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('gemini_timeout')), GEMINI_TIMEOUT_MS),
+            setTimeout(() => reject(new Error('gemini_timeout')), SUMMARY_TIMEOUT_MS),
           ),
         ]);
 
@@ -532,7 +533,7 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
     // 4. V2 正規経路: DB からラウンドデータ読み取り
     const { data: dbRounds, error: roundsError } = await supabase
       .from('round_rounds')
-      .select('round_number, transcript, mirror, question, response_v2, echo, sense, next')
+      .select('round_number, transcript, mirror, question, response_v2')
       .eq('session_id', session_id)
       .order('round_number', { ascending: true });
 
@@ -551,10 +552,10 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
       // transcript が空の round は除外
       if (!transcript || transcript.trim().length === 0) continue;
 
-      // echo/sense/next 抽出: response_v2 > top-level > legacy
-      const echo = r.response_v2?.echo || r.echo || r.mirror || '';
-      const sense = r.response_v2?.sense || r.sense || '';
-      const next = r.response_v2?.next || r.next || r.question || '';
+      // echo/sense/next 抽出: response_v2 > legacy (mirror/question)
+      const echo = r.response_v2?.echo || r.mirror || '';
+      const sense = r.response_v2?.sense || '';
+      const next = r.response_v2?.next || r.question || '';
 
       rounds.push({
         round_number: r.round_number,
@@ -585,7 +586,7 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
       const geminiResult = await Promise.race([
         generateContent(prompt),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('gemini_timeout')), GEMINI_TIMEOUT_MS),
+          setTimeout(() => reject(new Error('gemini_timeout')), SUMMARY_TIMEOUT_MS),
         ),
       ]);
 

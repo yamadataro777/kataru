@@ -1,9 +1,15 @@
 # Git Worktree Log
 
+## 2026-03-13 (Phase 5)
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: (pending) — feat: Phase 5 軽量なモード方向感 — プロンプト中心の分化
+- **Changes**: mode判定precedence + mode別ルール/禁止/Few-shot置換、mode×ラウンド補足、生成手順追加、summary timeout分離
+
 ## 2026-03-13 (Phase 4)
 - **Branch**: main
 - **Action**: commit + push
-- **Commit**: feat: Phase 4 まとめ画面V2 — 思考の軌跡フォーマット
+- **Commit**: 6d3e297 — feat: Phase 4 まとめ画面V2 — 思考の軌跡フォーマット
 - **Changes**: SummaryV2(journey/awareness/next_step)、DB読み取り正規経路、extractive fallback、V1/V2分岐UI
 
 ## 2026-03-13

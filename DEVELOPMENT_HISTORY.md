@@ -1,5 +1,31 @@
 # Kataru 開発の軌跡
 
+## 2026-03-13: Phase 5 — 軽量なモード方向感
+
+### 概要
+mode（structure/release/depth）による応答トーンの差異を「明らかに違う」レベルまで引き上げる。Phase 2 で観測用に導入済みの mode を、プロンプト中心の分化で応答品質に反映させる。
+
+### 設計方針
+- **プロンプト中心**: 追加 LLM コール禁止。単一コール内で mode 判定 + 応答生成
+- **precedence 方式**: structure > depth > release の優先順位で判定。「曖昧なら release」デフォルトを廃止
+- **禁止事項の明示**: 各 mode に「禁止」を明記しクロスコンタミネーション防止
+- **guardrail 優先**: crisis_fixed > gentle_empathy > soft_empathy > soft_reorient > mode rules
+
+### 変更内容（1ファイル + 1ファイル軽微）
+
+#### `backend/src/prompts/thinking-companion-prompt.ts`
+1. **mode セクション置換**: 抽象10行 → 具体的な判定優先順位 + mode別ルール（Echo/Sense/Next）+ 禁止事項
+2. **Few-shot 置換**: 汎用4例 → mode別正例2×3 + NG例1×3 + 共通NG
+3. **mode × ラウンド補足**: 非自明な4組み合わせ（R1+structure, R1+release, R3+release, R3+depth）のガイダンス
+4. **生成手順追加**: 3ステップ（mode決定→生成→禁止チェック）を出力形式直前に配置
+5. **TODO(Phase2) コメント削除**: mode は Phase 5 で正式機能化
+
+#### `backend/src/routes/round.ts`（軽微）
+- summary タイムアウトを `SUMMARY_TIMEOUT_MS` (15s) に分離
+- summary の DB select から冗長カラム（echo/sense/next）を削除、response_v2 から取得に統一
+
+---
+
 ## 2026-03-13: Phase 4 — まとめ画面の汎用化（SummaryV2）
 
 ### 概要
