@@ -2,8 +2,8 @@
 
 ## 2026-03-13 (Phase 9)
 - **Branch**: main
-- **Action**: commit
-- **Commit**: (pending)
+- **Action**: commit + push
+- **Commit**: 630b3a6 — feat: Phase 9 ユーザー選択式延長 — R3後に最大5Rまでユーザー主導で延長
 - **Changes**: 015_session_extension.sql（max_rounds_allowed + CHECK + トリガー + extend_session RPC）、round.ts extend/extension-event エンドポイント + feature flag + 409 handling + telemetry、thinking-companion-prompt.ts R4/R5 scopeGuide + buildContextV2 動的化、record/page.tsx extending Phase + 5ドット + handleExtend/handleEndSession、api.ts extendRoundSession/submitExtensionEvent
 
 ## 2026-03-13 (Phase 8)
