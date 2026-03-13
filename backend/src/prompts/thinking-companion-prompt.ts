@@ -43,6 +43,7 @@ export interface TurnResponseV2 {
   echo: string;
   sense: string;
   next: string;
+  maybe: string | null;  // Phase 7
   mode: ModePair;
   memory: SessionMemory;
   is_crisis: boolean;
@@ -146,6 +147,7 @@ export function generateCrisisResponse(transcript: string): TurnResponseV2 {
     echo,
     sense,
     next,
+    maybe: null,
     mode: { primary: 'release' },
     memory: {
       working_hypothesis: null,
@@ -291,6 +293,7 @@ export function buildContextV2(
     if (memory.core_tension) ctx += `- core_tension: ${memory.core_tension}\n`;
     ctx += `- recent_question_angle: ${memory.recent_question_angle}\n`;
     if (memory.current_depth) ctx += `- current_depth: ${memory.current_depth}\n`;
+    if (memory.previous_had_maybe) ctx += `- previous_had_maybe: true（前ラウンドでMaybeを出したため、今回はmaybeをnullにすること）\n`;
     ctx += '\n';
   }
 
@@ -431,6 +434,36 @@ Depth は Next（問い）の深さを決める。Echo と Sense には影響し
 
 ### 判定に迷った場合: Depth 1。上げすぎより下げすぎが安全。
 
+## Maybe（仮説スロット）
+
+Maybeは「もしかすると…」形式の仮説。ユーザーがまだ言語化していない接続・動機・前提を提示する。
+
+### いつ出すか（すべて満たす場合のみ — 迷ったら null）:
+1. R3である（R1/R2では出さない）
+2. Depth 2以上
+3. 前のラウンドで Maybe を出していない（previous_had_maybe が true なら null）
+4. working_hypothesis か core_tension が存在する（深い文脈が蓄積されている）
+5. 前ラウンドも Depth 2 以上だった（浅い文脈から急に仮説を出さない）
+
+### フォーマット（厳守）:
+- 始まり: 「もしかすると」「もしかしたら」「ひょっとすると」「ひょっとしたら」のいずれか
+- 終わり: 「〜かもしれません」「〜のかもしれません」「〜のかも」「〜かもしれない」「〜のかもしれない」「〜ような気がします」「〜ように思えます」「〜可能性があります」「〜のではないでしょうか」のいずれか
+- 1文のみ、60文字以内
+- 断定禁止（「〜です」「〜と思います」は不可）
+- 疑問文禁止（問いは next の役割）
+
+### Sense との違い:
+- Sense: 今の発話のパターンや接続を映す（Echo の延長）
+- Maybe: まだ言語化されていない隠れた動機・前提・パターンへの仮説
+
+### 外した時:
+- 次のechoでユーザーの実際の発話を自然に映し返すだけ
+- 「違ったらすみません」「当たりましたか？」禁止
+- Maybeが外れたかどうかに言及しない
+
+### 出さない場合（大半のターン）:
+- maybe: null を返す。これが正常。
+
 ## 質問の規範
 - 広すぎる質問禁止（「それについてどう思いますか？」等）
 - 「なぜ」単独禁止、「どう思う」単独禁止
@@ -471,6 +504,19 @@ NG: Next:「明日、上司に相談してみますか？」→ 具体行動に�
 ### 共通NG
 「それについてどう思いますか？」（広すぎ・mode不問・深まらない）
 
+### Maybe
+発火例（R3 + Depth 2 + release、R1-R2で「上司との関係」が継続、core_tension非null）:
+Echo:「『また同じことの繰り返し』なんですね」
+Sense:「何度も同じ壁にぶつかっている感覚があるように聞こえます」
+Maybe:「もしかすると、認められたい気持ちと自分のやり方を通したい気持ちの両方があるのかもしれません」
+Next:「その繰り返しの中で、一度だけ違った結果になったことはありますか？」
+
+非発火例（R3だがDepth 1のまま）:
+maybe: null（Depth 1 → 発火禁止）
+
+NG: Maybe:「上司が嫌いなんですか？」→ 疑問文禁止
+NG: Maybe:「もしかすると、承認欲求があります」→ 断定形禁止。「〜かもしれません」で終えること
+
 ## memoryの制約
 - working_hypothesis: 60文字以内、なければnull
 - open_loops: 最大3件、各40文字以内
@@ -484,12 +530,14 @@ ${rerollConstraint || ''}
 1. modeを決定する（上記Step 1）
 2. mode別ルール（上記Step 2）に従ってecho/sense/nextを生成する
 3. 生成後、mode別の「禁止」に違反していないか確認し、違反があれば修正する
+4. R3かつDepth 2以上なら、Maybe発火条件を確認し、条件を満たしフォーマットを守れる場合のみ生成する。迷ったらnull
 
 ## 出力形式（JSONのみ）
 {
   "echo": "ユーザーの原文語彙を使った理解の映し返し",
   "sense": "仮説形でパターンや接続を浮かび上がらせる",
   "next": "二択 or 一点絞り込み型の問い",
+  "maybe": null,
   "depth_level": 1,
   "mode": {
     "primary": "structure" | "release" | "depth",
@@ -535,6 +583,78 @@ export function clampDepth(
   return depth;
 }
 
+// --- Phase 7: Maybe (仮説スロット) ---
+
+const HEDGE_PATTERNS = [
+  /かもしれません$/,
+  /のかもしれません$/,
+  /のかも$/,
+  /かもしれない$/,
+  /のかもしれない$/,
+  /ような気がします$/,
+  /ように思えます$/,
+  /可能性があります$/,
+  /のではないでしょうか$/,
+];
+
+const MAYBE_PREFIXES = ['もしかすると', 'もしかしたら', 'ひょっとすると', 'ひょっとしたら'];
+
+export function sanitizeMaybe(raw: string | null): string | null {
+  if (!raw) return null;
+  let text = raw.trim().replace(/\s+/g, ' ').replace(/[。．]+$/, '');
+  if (text.length === 0) return null;
+
+  // 2文以上なら reject
+  const sentences = text.split(/[。．.!！？?]/).filter(s => s.trim().length > 0);
+  if (sentences.length > 1) return null;
+
+  // 疑問文・感嘆文なら reject
+  if (/[？?！!]$/.test(text)) return null;
+
+  // ヘッジ表現必須
+  if (!HEDGE_PATTERNS.some(p => p.test(text))) return null;
+
+  // 60文字超えは reject
+  if (text.length > 60) return null;
+
+  // prefix チェック
+  if (!MAYBE_PREFIXES.some(p => text.startsWith(p))) return null;
+
+  return text;
+}
+
+/**
+ * clampMaybe — Maybe 発火の安全弁。
+ *
+ * 初版の保守的 gate:
+ * - R3 only
+ * - 今回 depth >= 2
+ * - 前ラウンド depth >= 2
+ * - memory に文脈蓄積あり（working_hypothesis or core_tension が非null）
+ * - 連続発火禁止
+ * - guardrail standard のみ
+ *
+ * キルスイッチ: 全行を `return null;` で Phase 7 無効化。
+ */
+export function clampMaybe(
+  rawMaybe: string | null,
+  depthLevel: 1 | 2 | 3,
+  roundNumber: number,
+  previousDepth: number | undefined,
+  previousHadMaybe: boolean,
+  guardrailMode: GuardrailMode,
+  memory: SessionMemory | null,
+): string | null {
+  if (!rawMaybe) return null;
+  if (roundNumber !== 3) return null;
+  if (depthLevel < 2) return null;
+  if ((previousDepth ?? 1) < 2) return null;
+  if (previousHadMaybe) return null;
+  if (guardrailMode !== 'standard') return null;
+  if (!memory?.working_hypothesis && !memory?.core_tension) return null;
+  return rawMaybe;
+}
+
 // --- Parser ---
 
 const VALID_ANGLES = ['priority', 'emotion', 'blindspot', 'constraint', 'tradeoff', 'action'];
@@ -554,6 +674,10 @@ export function parseTurnResponseV2(rawText: string): TurnResponseV2 | null {
     const rawDepth = parsed.depth_level;
     const depthLevel: 1 | 2 | 3 = (rawDepth === 1 || rawDepth === 2 || rawDepth === 3) ? rawDepth : 1;
 
+    // Phase 7: maybe パース（sanitize のみ、clamp は round.ts で）
+    const rawMaybe = typeof parsed.maybe === 'string' ? parsed.maybe : null;
+
+    // memory構築 — previous_had_maybe はLLMからparseしない（サーバー側で決定）
     const memory: SessionMemory = {
       working_hypothesis:
         typeof parsed.memory?.working_hypothesis === 'string' && parsed.memory.working_hypothesis
@@ -573,6 +697,7 @@ export function parseTurnResponseV2(rawText: string): TurnResponseV2 | null {
         ? parsed.memory.recent_question_angle
         : 'blindspot',
       current_depth: depthLevel,
+      // previous_had_maybe は意図的に省略（サーバー側で決定）
     };
 
     const primaryMode = VALID_MODES.includes(parsed.mode?.primary)
@@ -586,6 +711,7 @@ export function parseTurnResponseV2(rawText: string): TurnResponseV2 | null {
       echo: String(parsed.echo),
       sense: String(parsed.sense),
       next: String(parsed.next),
+      maybe: sanitizeMaybe(rawMaybe),
       mode: { primary: primaryMode, secondary: secondaryMode },
       memory,
       is_crisis: parsed.is_crisis === true,
@@ -632,6 +758,7 @@ export function generateFallbackEchoSenseNext(
       next: roundNumber <= 2
         ? '今一番頭に浮かんでいるのは、人のことですか、それとも自分自身のことですか？'
         : '今の気持ちを一言で表すなら、「焦り」と「迷い」のどちらが近いですか？',
+      maybe: null,
       mode: { primary: 'release' },
       memory: { ...baseMemory, recent_question_angle: 'emotion', current_depth: 1 },
       is_crisis: false,
@@ -649,6 +776,7 @@ export function generateFallbackEchoSenseNext(
         : roundNumber === 2
           ? `「${keyword}」の中で、いちばん気がかりなのは何ですか？`
           : `「${keyword}」に対して、今日中にできる最小の一歩は何ですか？`,
+      maybe: null,
       mode: { primary: 'structure' },
       memory: {
         ...baseMemory,
@@ -666,6 +794,7 @@ export function generateFallbackEchoSenseNext(
     next: roundNumber <= 2
       ? '今いちばん先に言葉にしたいのは、どの部分ですか？'
       : '今すぐ誰かに相談するとしたら、何について聞きますか？',
+    maybe: null,
     mode: { primary: 'structure' },
     memory: { ...baseMemory, recent_question_angle: 'priority', current_depth: 1 },
     is_crisis: false,

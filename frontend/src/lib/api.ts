@@ -429,6 +429,7 @@ export interface RoundQuestionResponse {
   echo?: string;
   sense?: string;
   next?: string;
+  maybe?: string | null;  // Phase 7
   is_crisis?: boolean;
   memory: RoundSessionMemory;
   latency_ms: number;

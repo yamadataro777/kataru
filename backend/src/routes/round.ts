@@ -28,6 +28,7 @@ import {
   detectPullBack,
   resolveGuardrail,
   clampDepth,
+  clampMaybe,
   TurnResponseV2,
   SensitiveTopicResult,
   PullBackSignal,
@@ -81,7 +82,7 @@ function patchDepthIntoMemory(
     core_tension: null,
     recent_question_angle: 'blindspot',
   };
-  return { ...(base ?? empty), current_depth: depth };
+  return { ...(base ?? empty), current_depth: depth, previous_had_maybe: false };
 }
 
 // POST /session — Create round session
@@ -256,6 +257,16 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
               );
               parsed.depth_level = clampedDepth;
               normalizeDepthInTcResponse(parsed);
+
+              // Phase 7: clampMaybe — source of truth はサーバー側
+              const previousHadMaybe = memory?.previous_had_maybe ?? false;
+              const previousDepthForMaybe = normalizePersistedDepth(memory?.current_depth) ?? 1;
+              parsed.maybe = clampMaybe(
+                parsed.maybe, clampedDepth, roundNum,
+                previousDepthForMaybe, previousHadMaybe, guardrail, memory,
+              );
+              parsed.memory.previous_had_maybe = parsed.maybe !== null;
+
               tcResponse = parsed;
               guardrailLog = guardrail;
             }
@@ -321,11 +332,13 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             echo: tcResponse.echo,
             sense: tcResponse.sense,
             next: tcResponse.next,
+            maybe: tcResponse.maybe,
             mode: tcResponse.mode,
             is_crisis: tcResponse.is_crisis,
             depth_level: tcResponse.depth_level,
           },
           depth_used: tcResponse.depth_level,
+          maybe_fired: tcResponse.maybe !== null,
           // TODO(Phase2): Remove temporary mode observability after Phase 2 evaluation
           mode_primary: tcResponse.mode.primary,
           mode_secondary: tcResponse.mode.secondary || null,
@@ -361,6 +374,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             prompt_tokens: promptTokens,
             output_tokens: outputTokens,
             depth_used: tcResponse.depth_level,
+            maybe_fired: tcResponse.maybe !== null,
             // Phase 2 telemetry
             regex_high: crisisSignal.highConfidence,
             regex_low: crisisSignal.lowConfidence,
@@ -386,6 +400,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
         echo: tcResponse.echo,
         sense: tcResponse.sense,
         next: tcResponse.next,
+        maybe: tcResponse.maybe,
         is_crisis: tcResponse.is_crisis,
         memory: tcResponse.memory,
         latency_ms: latencyMs,
@@ -870,14 +885,22 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
 
     // 4. Get base memory (one-before)
     let baseMemory: SessionMemory | null = null;
+    let prevRoundDepthForMaybe: 1 | 2 | 3 = 1;  // Phase 7: R2 の実際の depth
     if (round.round_number >= 2) {
       const { data: prevRound } = await supabase
         .from('round_rounds')
-        .select('memory')
+        .select('memory, depth_used, response_v2')  // Phase 7: depth_used, response_v2 も取得
         .eq('session_id', round.session_id)
         .eq('round_number', round.round_number - 1)
         .single();
       baseMemory = prevRound?.memory || null;
+
+      // Phase 7: R2 の実際の depth を復元（clampMaybe の「前ラウンド depth >= 2」判定用）
+      prevRoundDepthForMaybe =
+        normalizePersistedDepth(prevRound?.depth_used) ??
+        normalizePersistedDepth((prevRound?.response_v2 as any)?.depth_level) ??
+        normalizePersistedDepth((prevRound?.memory as SessionMemory | null)?.current_depth) ??
+        1;
     }
 
     // Phase 6: depth は現在 round から継承（runtime 正規化付き）
@@ -925,11 +948,13 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
           echo: response.echo,
           sense: response.sense,
           next: response.next,
+          maybe: response.maybe,
           mode: response.mode,
           is_crisis: response.is_crisis,
           depth_level: response.depth_level,
         },
         depth_used: response.depth_level,
+        maybe_fired: response.maybe !== null,
         question_angle: opts.questionAngle,
         memory: persistedMem,
         question_rating: null,
@@ -1129,6 +1154,15 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
         );
         parsed.depth_level = clampedDepth;
         normalizeDepthInTcResponse(parsed);
+
+        // Phase 7: clampMaybe — prevRoundDepthForMaybe を使う（previousDepthForReroll ではない）
+        const rerollPreviousHadMaybe = baseMemory?.previous_had_maybe ?? false;
+        parsed.maybe = clampMaybe(
+          parsed.maybe, clampedDepth, round.round_number,
+          prevRoundDepthForMaybe, rerollPreviousHadMaybe, guardrail, baseMemory,
+        );
+        parsed.memory.previous_had_maybe = parsed.maybe !== null;
+
         tcResponse = parsed;
       } else {
         // 9b. Parse failure → fallback
@@ -1200,6 +1234,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
         pull_back_detected: pullBack.detected,
         crisis_redirected: false,
         depth_used: tcResponse.depth_level,
+        maybe_fired: tcResponse.maybe !== null,
       },
     });
 
@@ -1212,6 +1247,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
       echo: tcResponse.echo,
       sense: tcResponse.sense,
       next: tcResponse.next,
+      maybe: tcResponse.maybe,
       is_crisis: tcResponse.is_crisis,
       memory: rerollPersistedMemory,
       latency_ms: latencyMs,

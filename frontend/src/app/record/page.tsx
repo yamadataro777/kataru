@@ -34,6 +34,7 @@ interface RoundResult {
   echo?: string;
   sense?: string;
   next?: string;
+  maybe?: string | null;  // Phase 7
   isCrisis?: boolean;
   questionRating: QuestionRating | null;
   hasRerolled?: boolean;
@@ -223,6 +224,7 @@ export default function RecordPage() {
               echo: result.echo,
               sense: result.sense,
               next: result.next,
+              maybe: result.maybe ?? null,
               isCrisis: result.is_crisis,
               questionRating: null,
             },
@@ -317,6 +319,7 @@ export default function RecordPage() {
           echo: result.echo,
           sense: result.sense,
           next: result.next,
+          maybe: result.maybe ?? null,
           isCrisis: result.is_crisis,
           questionRating: null,
           hasRerolled: true,
@@ -701,6 +704,19 @@ export default function RecordPage() {
                   </p>
                   <p className="text-sm text-hud-white opacity-90 leading-relaxed">
                     {currentRound.sense || ''}
+                  </p>
+                </GlassCard>
+              )}
+
+              {/* Maybe — hypothesis (Phase 7) */}
+              {currentRound.maybe && (
+                <GlassCard variant="lime" className="w-full p-4 opacity-85">
+                  <p className="text-[10px] tracking-[2px] opacity-50 mb-2"
+                     style={{ color: 'var(--neon-lime)' }}>
+                    MAYBE
+                  </p>
+                  <p className="text-sm text-hud-white opacity-85 leading-relaxed italic">
+                    {currentRound.maybe}
                   </p>
                 </GlassCard>
               )}

@@ -8,6 +8,7 @@ export interface SessionMemory {
   core_tension: string | null;
   recent_question_angle: QuestionAngle;
   current_depth?: 1 | 2 | 3;  // Phase 6
+  previous_had_maybe?: boolean;  // Phase 7: サーバー側で決定、LLM出力からparseしない
 }
 
 export interface RoundResponse {
