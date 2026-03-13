@@ -6,6 +6,30 @@
 import { SessionMemory, QuestionRating, preprocessTranscript } from './round-question-prompt';
 import { CRISIS_RESOURCES, CRISIS_FALLBACK_TEXT } from '../config/crisis-resources';
 
+// --- Summary V2 Types ---
+
+export interface SummaryResponseV2 {
+  version: 2;
+  journey: {
+    start_quote: string;
+    shift: string;
+    end_quote: string;
+  };
+  awareness: string;
+  next_step: {
+    type: 'action' | 'question' | 'invitation';
+    content: string;
+  };
+}
+
+export interface RoundData {
+  round_number: number;
+  transcript: string;
+  echo: string;
+  sense: string;
+  next: string;
+}
+
 // --- Types ---
 
 export type ModeHint = 'structure' | 'release' | 'depth';
@@ -519,4 +543,200 @@ export function generateFallbackEchoSenseNext(
     memory: { ...baseMemory, recent_question_angle: 'priority' },
     is_crisis: false,
   };
+}
+
+// --- Summary V2: normalizeQuote ---
+
+export function normalizeQuote(raw: string): string {
+  let q = raw.trim();
+  // 改行連打の圧縮
+  q = q.replace(/\n{2,}/g, '\n');
+  // 空防止
+  if (!q) return '';
+  // 60文字超過時は文節末尾で自然に切る
+  if (q.length > 60) {
+    const cutPoints = ['。', '」', '、'];
+    let bestCut = -1;
+    for (const cp of cutPoints) {
+      const idx = q.lastIndexOf(cp, 60);
+      if (idx > bestCut) bestCut = idx;
+    }
+    if (bestCut > 10) {
+      q = q.slice(0, bestCut + 1);
+    } else {
+      q = q.slice(0, 60);
+    }
+  }
+  return q;
+}
+
+// --- Summary V2: extractive helpers ---
+
+function extractFirstMeaningfulSentence(transcript: string | undefined | null): string {
+  if (!transcript) return 'ここから始まりました';
+  const sentences = transcript
+    .split(/[。！？\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 5 && !/^(えーと|あの|まあ|うーん|そうですね)+$/.test(s));
+  const found = sentences[0];
+  if (!found) return 'ここから始まりました';
+  return normalizeQuote(found);
+}
+
+function extractLastMeaningfulSentence(transcript: string | undefined | null): string {
+  if (!transcript) return 'ここまで話しました';
+  const sentences = transcript
+    .split(/[。！？\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 5 && !/^(えーと|あの|まあ|うーん|そうですね)+$/.test(s));
+  const found = sentences[sentences.length - 1];
+  if (!found) return 'ここまで話しました';
+  return normalizeQuote(found);
+}
+
+// --- Summary V2: Extractive Fallback ---
+
+export function buildExtractiveFallback(rounds: RoundData[]): SummaryResponseV2 {
+  const firstMeaningful = extractFirstMeaningfulSentence(rounds[0]?.transcript);
+  const lastMeaningful = extractLastMeaningfulSentence(rounds[rounds.length - 1]?.transcript);
+
+  return {
+    version: 2,
+    journey: {
+      start_quote: firstMeaningful,
+      shift: rounds.length >= 2
+        ? '話しながら、少しずつ焦点が移っていきました'
+        : '考え始めたところです',
+      end_quote: rounds.length >= 2 ? lastMeaningful : firstMeaningful,
+    },
+    awareness: '今日話した内容が、頭の中に残っています',
+    next_step: { type: 'question', content: '今日話したことの中で、一番引っかかった部分を紙に書き出してみてください' },
+  };
+}
+
+// --- Summary V2: Prompt Builder ---
+
+export function buildSummaryPromptV2(rounds: RoundData[], memory: SessionMemory | null): string {
+  let input = '';
+
+  for (const r of rounds) {
+    input += `\n## ラウンド ${r.round_number}\n`;
+    input += `### ユーザー発話（transcript）:\n${r.transcript.slice(-1000)}\n`;
+    if (r.echo) input += `### echo: ${r.echo}\n`;
+    if (r.sense) input += `### sense: ${r.sense}\n`;
+    if (r.next) input += `### next: ${r.next}\n`;
+  }
+
+  if (memory) {
+    input += `\n## セッションメモリ（参考情報のみ、引用・言い換え禁止）:\n`;
+    if (memory.working_hypothesis) input += `- working_hypothesis: ${memory.working_hypothesis}\n`;
+    if (memory.open_loops?.length > 0) input += `- open_loops: ${memory.open_loops.join('、')}\n`;
+    if (memory.core_tension) input += `- core_tension: ${memory.core_tension}\n`;
+  }
+
+  const roundCount = rounds.length;
+
+  return `あなたはユーザーの思考セッション（${roundCount}ラウンド）のまとめを作成します。
+
+## 核心原則
+ユーザーが「これは自分で気づいたことだ」と感じられるまとめを作ること。
+AIの分析・診断・ラベル付けは一切禁止。ユーザーの原文から引用し、ユーザー視点で書く。
+
+## 入力データ
+${input}
+
+## 出力構造
+
+### journey
+- **start_quote**: セッション前半で最もテーマを表すユーザーの原文。20〜60文字目安。文節の途中で切らない。echo/sense/memoryからの引用禁止。transcriptからのみ。
+- **shift**: 思考変化を1文で（ユーザー視点、AI分析禁止）。${roundCount === 1 ? '1ラウンドのみなので「〜について考え始めたところです」' : ''}
+- **end_quote**: セッション後半で最も変化を表すユーザーの原文。20〜60文字目安。文節の途中で切らない。echo/sense/memoryからの引用禁止。transcriptからのみ。${roundCount === 1 ? '1ラウンドの場合はstart_quoteと同じ発話からでもよい。' : ''}
+
+### awareness
+最も重要な気づき。1文のみ。仮説形（「〜かもしれない」「〜のように感じている」）。断定禁止。
+ユーザーの原文に近い語彙を優先する。
+禁止: 「あなたは本当は〜」「つまり〜だった」。ユーザーが発言していない感情の付与禁止。原因分析・診断・ラベル付け禁止。
+
+### next_step
+- **type**: 以下のいずれか
+  - "action": 実務・意思決定・整理が進んでいる時（具体的な行動）
+  - "question": まだ核心が曖昧な時（紙やメモに書ける一問）
+  - "invitation": 感情負荷が高い・深掘りを急がない時（実行可能な軽い招待）
+- **content**: 1文のみ。
+  - action: 10分以内に着手できる具体行動
+  - question: 紙やメモに書ける一問
+  - invitation: 実行可能な軽い招待
+  - 「整理する」「考える」「向き合う」単独は禁止（具体的な対象・手段を伴うこと）
+
+## echo/sense/memoryの使用制約
+- echo/senseはセッションの流れを把握するための補助材料。awarenessやjourney.shiftをecho/senseの言い換えで構成することは禁止。
+- memoryはセッションの整合性確認用のみ。memoryの言い換えでawareness/shift/next_stepを作ることは禁止。
+- **主材料はtranscriptのみ**。quote抽出・awareness・shift・next_stepすべてtranscriptから作る。
+
+## 出力形式（JSONのみ）
+{
+  "version": 2,
+  "journey": {
+    "start_quote": "セッション前半のユーザー原文",
+    "shift": "思考変化を1文で",
+    "end_quote": "セッション後半のユーザー原文"
+  },
+  "awareness": "最も重要な気づき（仮説形、1文）",
+  "next_step": {
+    "type": "action" | "question" | "invitation",
+    "content": "次の一歩"
+  }
+}
+
+JSONのみを出力してください。説明不要。`;
+}
+
+// --- Summary V2: Parser ---
+
+const VALID_NEXT_STEP_TYPES = ['action', 'question', 'invitation'] as const;
+
+export function parseSummaryResponseV2(rawText: string): SummaryResponseV2 | null {
+  let text = rawText.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // 必須項目チェック
+    if (!parsed.journey?.start_quote || !parsed.journey?.shift || !parsed.journey?.end_quote) return null;
+    if (!parsed.awareness) return null;
+    if (!parsed.next_step?.type || !parsed.next_step?.content) return null;
+
+    // type enum チェック
+    if (!VALID_NEXT_STEP_TYPES.includes(parsed.next_step.type)) return null;
+
+    const startQuote = String(parsed.journey.start_quote);
+    const shift = String(parsed.journey.shift);
+    const endQuote = String(parsed.journey.end_quote);
+    const awareness = String(parsed.awareness);
+    const content = String(parsed.next_step.content);
+
+    // 最低文字数チェック
+    if (startQuote.length < 5 || endQuote.length < 5 || shift.length < 5 || awareness.length < 5 || content.length < 5) {
+      return null;
+    }
+
+    return {
+      version: 2,
+      journey: {
+        start_quote: startQuote,
+        shift,
+        end_quote: endQuote,
+      },
+      awareness,
+      next_step: {
+        type: parsed.next_step.type as 'action' | 'question' | 'invitation',
+        content,
+      },
+    };
+  } catch {
+    return null;
+  }
 }

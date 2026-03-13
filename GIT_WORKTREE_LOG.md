@@ -1,5 +1,17 @@
 # Git Worktree Log
 
+## 2026-03-13 (Phase 4)
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: feat: Phase 4 まとめ画面V2 — 思考の軌跡フォーマット
+- **Changes**: SummaryV2(journey/awareness/next_step)、DB読み取り正規経路、extractive fallback、V1/V2分岐UI
+
+## 2026-03-13
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: 3646a3a — feat: Phase 3 失敗回復UX — リロール・リセット機能
+- **Changes**: POST reroll/DELETE round エンドポイント、buildRerollConstraint、フロントUI（別の問いを見る/取り消し）、Gemini maxOutputTokens修正
+
 ## 2026-03-12
 - **Branch**: main
 - **Action**: commit + push

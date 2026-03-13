@@ -435,12 +435,29 @@ export interface RoundQuestionResponse {
   used_fallback: boolean;
 }
 
-export interface RoundSummaryResponse {
+export interface RoundSummaryResponseV1 {
   blockage: string;
   key_points: string[];
   next_step: string;
   latency_ms: number;
 }
+
+export interface RoundSummaryResponseV2 {
+  version: 2;
+  journey: {
+    start_quote: string;
+    shift: string;
+    end_quote: string;
+  };
+  awareness: string;
+  next_step: {
+    type: 'action' | 'question' | 'invitation';
+    content: string;
+  };
+  latency_ms: number;
+}
+
+export type RoundSummaryResponse = RoundSummaryResponseV1 | RoundSummaryResponseV2;
 
 export async function createRoundSession(
   selectedDuration: number,
@@ -474,16 +491,10 @@ export async function submitRoundQuestion(formData: FormData): Promise<RoundQues
   }
 }
 
-export async function submitRoundSummary(data: {
-  session_id: string;
-  round3_transcript: string;
-  mirrors: string[];
-  questions: string[];
-  session_memory: RoundSessionMemory | null;
-}): Promise<RoundSummaryResponse> {
+export async function submitRoundSummary(sessionId: string): Promise<RoundSummaryResponse> {
   return request('/api/round/summary', {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({ session_id: sessionId }),
   });
 }
 

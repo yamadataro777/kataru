@@ -32,6 +32,12 @@ import {
   PullBackSignal,
   GuardrailMode,
   GuardrailModeLog,
+  RoundData,
+  SummaryResponseV2,
+  buildSummaryPromptV2,
+  parseSummaryResponseV2,
+  normalizeQuote,
+  buildExtractiveFallback,
 } from '../prompts/thinking-companion-prompt';
 
 const router = Router();
@@ -424,21 +430,156 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
   const startTime = Date.now();
 
   try {
+    const authReq = req as AuthenticatedRequest;
     const { session_id, round3_transcript, mirrors, questions, session_memory } = req.body;
 
+    // 1. session_id 必須
     if (!session_id) {
       res.status(400).json({ error: 'session_id is required' });
       return;
     }
 
-    const prompt = buildSummaryPrompt(
-      mirrors || [],
-      questions || [],
-      session_memory || null,
-      round3_transcript || '',
-    );
+    // 2. Ownership チェック
+    const { data: session, error: sessionError } = await supabase
+      .from('round_sessions')
+      .select('user_id, session_memory')
+      .eq('id', session_id)
+      .single();
 
-    let summary;
+    if (sessionError || !session) {
+      res.status(404).json({ error: 'セッションが見つかりません' });
+      return;
+    }
+
+    if (session.user_id !== null && authReq.userId !== session.user_id) {
+      res.status(403).json({ error: '権限がありません' });
+      return;
+    }
+    if (session.user_id === null && authReq.userId !== 'dev-user') {
+      res.status(403).json({ error: '権限がありません' });
+      return;
+    }
+
+    // 3. V1 fallback: 旧パラメータが来た場合
+    const hasLegacyParams = mirrors || questions || round3_transcript;
+    if (hasLegacyParams) {
+      // TODO(post-gate4): V1 summary 生成経路を削除
+      const prompt = buildSummaryPrompt(
+        mirrors || [],
+        questions || [],
+        session_memory || null,
+        round3_transcript || '',
+      );
+
+      let summary;
+      let parseFailed = false;
+
+      try {
+        const geminiResult = await Promise.race([
+          generateContent(prompt),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('gemini_timeout')), GEMINI_TIMEOUT_MS),
+          ),
+        ]);
+
+        summary = parseSummaryResponse(geminiResult);
+
+        if (!summary) {
+          parseFailed = true;
+          console.error('Failed to parse summary response:', geminiResult.substring(0, 300));
+          summary = {
+            blockage: '分析結果を生成できませんでした',
+            key_points: ['セッションデータを確認してください'],
+            next_step: 'もう一度セッションを試してみてください',
+          };
+        }
+      } catch (summaryErr) {
+        parseFailed = true;
+        console.error('Summary generation failed:', summaryErr);
+        summary = {
+          blockage: '分析結果を生成できませんでした',
+          key_points: ['セッションデータを確認してください'],
+          next_step: 'もう一度セッションを試してみてください',
+        };
+      }
+
+      const latencyMs = Date.now() - startTime;
+
+      await supabase
+        .from('round_sessions')
+        .update({ summary, status: 'completed', completed_at: new Date().toISOString() })
+        .eq('id', session_id);
+
+      await supabase.from('round_events').insert({
+        session_id,
+        event_type: 'summary_generated',
+        data: {
+          summary_version: 1,
+          summary_path: 'v1_fallback',
+          round_count_used: 0,
+          used_extractive_fallback: false,
+          parse_failed: parseFailed,
+          latency_ms: latencyMs,
+          next_step_type: null,
+          quote_source_mode: null,
+        },
+      });
+
+      res.json({ ...summary, latency_ms: latencyMs });
+      return;
+    }
+
+    // 4. V2 正規経路: DB からラウンドデータ読み取り
+    const { data: dbRounds, error: roundsError } = await supabase
+      .from('round_rounds')
+      .select('round_number, transcript, mirror, question, response_v2, echo, sense, next')
+      .eq('session_id', session_id)
+      .order('round_number', { ascending: true });
+
+    if (roundsError) throw roundsError;
+
+    // 0ラウンドガード（第一段）
+    if (!dbRounds || dbRounds.length === 0) {
+      res.status(400).json({ error: 'ラウンドが存在しません' });
+      return;
+    }
+
+    // legacy round データの抽出
+    const rounds: RoundData[] = [];
+    for (const r of dbRounds) {
+      const transcript = r.transcript;
+      // transcript が空の round は除外
+      if (!transcript || transcript.trim().length === 0) continue;
+
+      // echo/sense/next 抽出: response_v2 > top-level > legacy
+      const echo = r.response_v2?.echo || r.echo || r.mirror || '';
+      const sense = r.response_v2?.sense || r.sense || '';
+      const next = r.response_v2?.next || r.next || r.question || '';
+
+      rounds.push({
+        round_number: r.round_number,
+        transcript,
+        echo,
+        sense,
+        next,
+      });
+    }
+
+    // 0ラウンドガード（第二段: 有効round 0件）
+    if (rounds.length === 0) {
+      res.status(400).json({ error: '有効なラウンドデータがありません' });
+      return;
+    }
+
+    // session_memory 取得
+    const memory: SessionMemory | null = session.session_memory || null;
+
+    // V2 プロンプト生成 → Gemini → パース → normalize
+    const prompt = buildSummaryPromptV2(rounds, memory);
+    let summary: SummaryResponseV2;
+    let parseFailed = false;
+    let usedExtractiveFallback = false;
+    let quoteSourceMode: 'llm' | 'extractive_fallback' = 'llm';
 
     try {
       const geminiResult = await Promise.race([
@@ -448,42 +589,72 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
         ),
       ]);
 
-      summary = parseSummaryResponse(geminiResult);
+      const parsed = parseSummaryResponseV2(geminiResult);
 
-      if (!summary) {
-        console.error('Failed to parse summary response:', geminiResult.substring(0, 300));
-        summary = {
-          blockage: '分析結果を生成できませんでした',
-          key_points: ['セッションデータを確認してください'],
-          next_step: 'もう一度セッションを試してみてください',
-        };
+      if (parsed) {
+        // normalize
+        parsed.journey.start_quote = normalizeQuote(parsed.journey.start_quote);
+        parsed.journey.end_quote = normalizeQuote(parsed.journey.end_quote);
+        parsed.journey.shift = normalizeQuote(parsed.journey.shift);
+
+        // 空防止 fallback
+        if (!parsed.journey.start_quote) parsed.journey.start_quote = 'ここから始まりました';
+        if (!parsed.journey.end_quote) parsed.journey.end_quote = 'ここまで話しました';
+
+        // version 強制セット
+        parsed.version = 2;
+
+        // 妥当性判定: 全フィールド非空
+        if (
+          parsed.journey.start_quote &&
+          parsed.journey.shift &&
+          parsed.journey.end_quote &&
+          parsed.awareness &&
+          parsed.next_step.content
+        ) {
+          summary = parsed;
+        } else {
+          summary = buildExtractiveFallback(rounds);
+          usedExtractiveFallback = true;
+          quoteSourceMode = 'extractive_fallback';
+        }
+      } else {
+        parseFailed = true;
+        console.error('Failed to parse V2 summary:', geminiResult.substring(0, 300));
+        summary = buildExtractiveFallback(rounds);
+        usedExtractiveFallback = true;
+        quoteSourceMode = 'extractive_fallback';
       }
     } catch (summaryErr) {
-      console.error('Summary generation failed:', summaryErr);
-      summary = {
-        blockage: '分析結果を生成できませんでした',
-        key_points: ['セッションデータを確認してください'],
-        next_step: 'もう一度セッションを試してみてください',
-      };
+      parseFailed = true;
+      console.error('V2 summary generation failed:', summaryErr);
+      summary = buildExtractiveFallback(rounds);
+      usedExtractiveFallback = true;
+      quoteSourceMode = 'extractive_fallback';
     }
 
     const latencyMs = Date.now() - startTime;
 
-    // Update session
+    // 保存
     await supabase
       .from('round_sessions')
-      .update({
-        summary,
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      })
+      .update({ summary, status: 'completed', completed_at: new Date().toISOString() })
       .eq('id', session_id);
 
-    // Log event
+    // テレメトリ
     await supabase.from('round_events').insert({
       session_id,
-      event_type: 'session_completed',
-      data: { latency_ms: latencyMs },
+      event_type: 'summary_generated',
+      data: {
+        summary_version: 2,
+        summary_path: 'v2',
+        round_count_used: rounds.length,
+        used_extractive_fallback: usedExtractiveFallback,
+        parse_failed: parseFailed,
+        latency_ms: latencyMs,
+        next_step_type: summary.next_step.type,
+        quote_source_mode: quoteSourceMode,
+      },
     });
 
     res.json({ ...summary, latency_ms: latencyMs });

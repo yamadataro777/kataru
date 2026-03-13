@@ -1,5 +1,33 @@
 # Kataru 開発の軌跡
 
+## 2026-03-13: Phase 4 — まとめ画面の汎用化（SummaryV2）
+
+### 概要
+3ラウンドセッション終了時のまとめを「詰まり→論点→アクション」(V1) から「ユーザーの言葉を引用した思考の軌跡」(V2) 形式に刷新。「これ自分で気づいたんだ」感を生む。
+
+### 設計方針
+- **主材料はtranscriptのみ**: quote抽出・awareness・shift・next_stepすべてユーザー発話原文から生成
+- **echo/sense/memoryは補助材料に格下げ**: LLMの文脈把握用、言い換え利用禁止
+- **source of truthはbackend/DB**: フロントから rounds[] を送らず session_id のみ送信
+- **失敗宣言禁止**: LLMパース失敗時も extractive fallback で「理解された感」を維持
+
+### 新フォーマット: SummaryResponseV2
+- `journey`: start_quote（前半の代表発話）→ shift（思考変化1文）→ end_quote（後半の代表発話）
+- `awareness`: 最重要の気づき（仮説形、断定禁止）
+- `next_step`: type（action/question/invitation）+ content
+
+### 変更ファイル（4ファイル）
+1. **`backend/src/prompts/thinking-companion-prompt.ts`** — SummaryResponseV2型, buildSummaryPromptV2, parseSummaryResponseV2, normalizeQuote, buildExtractiveFallback 追加
+2. **`backend/src/routes/round.ts`** — POST /summary を V2正規経路 + V1 fallback に書き換え。Ownershipチェック、0ラウンドガード(二段)、テレメトリ記録追加
+3. **`frontend/src/lib/api.ts`** — RoundSummaryResponse を V1/V2 union型に。submitRoundSummary を session_id のみ送信に簡素化
+4. **`frontend/src/app/record/page.tsx`** — SummaryData を V1/V2 union型に。V2なら3カード（思考の軌跡/気づき/次の一歩）、V1なら旧表示
+
+### V1経路の扱い
+- 旧パラメータ（mirrors/questions/round3_transcript）検出時は V1 fallback
+- `// TODO(post-gate4): V1 summary 生成経路を削除` コメント付き
+
+---
+
 ## 2026-03-12: Implementation Playbook 策定
 
 ### 概要

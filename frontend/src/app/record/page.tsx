@@ -39,10 +39,30 @@ interface RoundResult {
   hasRerolled?: boolean;
 }
 
-interface SummaryData {
+interface SummaryDataV1 {
   blockage: string;
   key_points: string[];
   next_step: string;
+}
+
+interface SummaryDataV2 {
+  version: 2;
+  journey: {
+    start_quote: string;
+    shift: string;
+    end_quote: string;
+  };
+  awareness: string;
+  next_step: {
+    type: 'action' | 'question' | 'invitation';
+    content: string;
+  };
+}
+
+type SummaryData = SummaryDataV1 | SummaryDataV2;
+
+function isSummaryV2(s: SummaryData): s is SummaryDataV2 {
+  return 'version' in s && s.version === 2;
 }
 
 // --- Constants ---
@@ -349,19 +369,19 @@ export default function RecordPage() {
 
     try {
       const snap = stateRef.current;
-      const result = await submitRoundSummary({
-        session_id: snap.sessionId!,
-        round3_transcript: snap.rounds[snap.rounds.length - 1]?.transcript || '',
-        mirrors: snap.rounds.map((r) => r.mirror),
-        questions: snap.rounds.map((r) => r.question),
-        session_memory: snap.sessionMemory,
-      });
+      const result = await submitRoundSummary(snap.sessionId!);
 
-      setSummary({
-        blockage: result.blockage,
-        key_points: result.key_points,
-        next_step: result.next_step,
-      });
+      // V2/V1 判定
+      if ('version' in result && result.version === 2) {
+        setSummary(result as unknown as SummaryDataV2);
+      } else {
+        const v1 = result as { blockage: string; key_points: string[]; next_step: string };
+        setSummary({
+          blockage: v1.blockage,
+          key_points: v1.key_points,
+          next_step: v1.next_step,
+        });
+      }
       setPhase('summary');
       triggerHaptic('heavy');
     } catch (err) {
@@ -808,47 +828,92 @@ export default function RecordPage() {
               </h2>
 
               {summary ? (
-                <>
-                  {/* Blockage */}
-                  <GlassCard variant="magenta" className="p-4">
-                    <p className="text-[10px] tracking-[2px] text-neon-magenta opacity-60 mb-2">
-                      今回の詰まり
-                    </p>
-                    <p className="text-sm text-hud-white leading-relaxed">
-                      {summary.blockage}
-                    </p>
-                  </GlassCard>
+                isSummaryV2(summary) ? (
+                  <>
+                    {/* Card 1: 思考の軌跡 */}
+                    <GlassCard variant="cyan" className="p-4">
+                      <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-3">
+                        思考の軌跡
+                      </p>
+                      <p className="text-sm text-hud-white leading-relaxed italic opacity-90 mb-2">
+                        &ldquo;{summary.journey.start_quote}&rdquo;
+                      </p>
+                      <p className="text-xs text-neon-cyan opacity-50 mb-2 text-center">
+                        {summary.journey.shift}
+                      </p>
+                      <p className="text-sm text-hud-white leading-relaxed italic opacity-90">
+                        &ldquo;{summary.journey.end_quote}&rdquo;
+                      </p>
+                    </GlassCard>
 
-                  {/* Key points */}
-                  <GlassCard variant="cyan" className="p-4">
-                    <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-2">
-                      重要論点
-                    </p>
-                    <ul className="space-y-2">
-                      {summary.key_points.map((point, i) => (
-                        <li
-                          key={i}
-                          className="text-sm text-hud-white leading-relaxed flex items-start gap-2"
-                        >
-                          <span className="text-neon-cyan opacity-50 mt-0.5">
-                            {i + 1}.
-                          </span>
-                          {point}
-                        </li>
-                      ))}
-                    </ul>
-                  </GlassCard>
+                    {/* Card 2: 気づき */}
+                    <GlassCard variant="lime" className="p-4">
+                      <p className="text-[10px] tracking-[2px] text-neon-lime opacity-60 mb-3">
+                        気づき
+                      </p>
+                      <p className="text-base text-hud-white leading-relaxed font-medium">
+                        {summary.awareness}
+                      </p>
+                    </GlassCard>
 
-                  {/* Next step */}
-                  <GlassCard variant="lime" className="p-4">
-                    <p className="text-[10px] tracking-[2px] text-neon-lime opacity-60 mb-2">
-                      次の一歩
-                    </p>
-                    <p className="text-sm text-hud-white leading-relaxed font-medium">
-                      {summary.next_step}
-                    </p>
-                  </GlassCard>
-                </>
+                    {/* Card 3: 次の一歩 */}
+                    <GlassCard variant="magenta" className="p-4">
+                      <p className="text-[10px] tracking-[2px] text-neon-magenta opacity-60 mb-3">
+                        次の一歩
+                      </p>
+                      <p
+                        className="text-sm text-hud-white leading-relaxed font-medium"
+                        style={{
+                          opacity: summary.next_step.type === 'action' ? 1
+                            : summary.next_step.type === 'question' ? 0.85
+                            : 0.75,
+                        }}
+                      >
+                        {summary.next_step.content}
+                      </p>
+                    </GlassCard>
+                  </>
+                ) : (
+                  <>
+                    {/* V1 Legacy display */}
+                    <GlassCard variant="magenta" className="p-4">
+                      <p className="text-[10px] tracking-[2px] text-neon-magenta opacity-60 mb-2">
+                        今回の詰まり
+                      </p>
+                      <p className="text-sm text-hud-white leading-relaxed">
+                        {summary.blockage}
+                      </p>
+                    </GlassCard>
+
+                    <GlassCard variant="cyan" className="p-4">
+                      <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-2">
+                        重要論点
+                      </p>
+                      <ul className="space-y-2">
+                        {summary.key_points.map((point, i) => (
+                          <li
+                            key={i}
+                            className="text-sm text-hud-white leading-relaxed flex items-start gap-2"
+                          >
+                            <span className="text-neon-cyan opacity-50 mt-0.5">
+                              {i + 1}.
+                            </span>
+                            {point}
+                          </li>
+                        ))}
+                      </ul>
+                    </GlassCard>
+
+                    <GlassCard variant="lime" className="p-4">
+                      <p className="text-[10px] tracking-[2px] text-neon-lime opacity-60 mb-2">
+                        次の一歩
+                      </p>
+                      <p className="text-sm text-hud-white leading-relaxed font-medium">
+                        {summary.next_step}
+                      </p>
+                    </GlassCard>
+                  </>
+                )
               ) : (
                 error && (
                   <GlassCard variant="magenta" className="p-4">
