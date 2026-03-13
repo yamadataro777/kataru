@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { deleteAccount } from '@/lib/api';
+import { deleteAccount, getTrustMemory, deleteTrustMemory, TrustMemoryData } from '@/lib/api';
 import GlassCard from '@/components/ui/GlassCard';
 import NeonButton from '@/components/ui/NeonButton';
 
@@ -19,8 +19,32 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [devUnlocked, setDevUnlocked] = useState(false);
+  const [trustMemory, setTrustMemory] = useState<TrustMemoryData | null>(null);
+  const [trustMemoryLoading, setTrustMemoryLoading] = useState(true);
+  const [showForgetConfirm, setShowForgetConfirm] = useState(false);
+  const [forgetting, setForgetting] = useState(false);
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    getTrustMemory()
+      .then(res => setTrustMemory(res.trust_memory))
+      .catch(() => setTrustMemory(null))
+      .finally(() => setTrustMemoryLoading(false));
+  }, []);
+
+  const handleForgetAll = async () => {
+    setForgetting(true);
+    try {
+      await deleteTrustMemory();
+      setTrustMemory(null);
+      setShowForgetConfirm(false);
+    } catch {
+      setError('記憶の削除に失敗しました。');
+    } finally {
+      setForgetting(false);
+    }
+  };
 
   const handleVersionTap = () => {
     if (process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS !== 'true') return;
@@ -102,6 +126,83 @@ export default function SettingsPage() {
             利用規約
           </button>
         </div>
+      </GlassCard>
+
+      {/* Memory (Phase 8) */}
+      <GlassCard className="p-5 mb-4" variant="cyan">
+        <h2 className="text-[10px] tracking-[2px] text-hud-white-dim mb-1">MEMORY</h2>
+        <p className="text-[9px] text-hud-white-dim opacity-60 mb-3">Kataruが覚えていること</p>
+
+        {trustMemoryLoading ? (
+          <p className="text-[10px] text-hud-white-dim">読み込み中...</p>
+        ) : !trustMemory ? (
+          <p className="text-[10px] text-hud-white-dim opacity-60">まだ記憶はありません</p>
+        ) : (
+          <div className="space-y-2">
+            {/* Recurring themes */}
+            {trustMemory.recurring_themes && trustMemory.recurring_themes.length > 0 && (
+              <div>
+                <p className="text-[9px] tracking-[1px] text-neon-cyan opacity-50 mb-1">テーマ</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {trustMemory.recurring_themes
+                    .filter(t => t.decay_weight >= 0.1)
+                    .map(t => (
+                      <span
+                        key={t.label}
+                        className="text-[10px] px-2 py-0.5 rounded border border-[rgba(0,212,255,0.2)] text-hud-white"
+                      >
+                        {t.label}（{t.count}回）
+                      </span>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tone signals */}
+            {trustMemory.tone_signals && (
+              <div>
+                <p className="text-[9px] tracking-[1px] text-neon-cyan opacity-50 mb-1">傾向</p>
+                <div className="space-y-0.5">
+                  {trustMemory.tone_signals.prefers_structure && (
+                    <p className="text-[10px] text-hud-white opacity-80">構造的な整理を好む</p>
+                  )}
+                  {trustMemory.tone_signals.avoids_depth_push && (
+                    <p className="text-[10px] text-hud-white opacity-80">深掘りは控えめが良い</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Forget button */}
+            <div className="pt-2">
+              {!showForgetConfirm ? (
+                <button
+                  onClick={() => setShowForgetConfirm(true)}
+                  className="text-[10px] tracking-[1px] text-neon-magenta bg-transparent border border-[rgba(255,59,122,0.3)] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[rgba(255,59,122,0.1)] transition-colors"
+                >
+                  すべて忘れる
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowForgetConfirm(false)}
+                    className="text-[10px] tracking-[1px] text-hud-white-dim bg-transparent border border-[rgba(232,237,245,0.2)] rounded-lg px-3 py-1.5 cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={handleForgetAll}
+                    disabled={forgetting}
+                    className="text-[10px] tracking-[1px] text-white rounded-lg px-3 py-1.5 cursor-pointer disabled:opacity-30"
+                    style={{ background: 'rgba(255,59,122,0.6)' }}
+                  >
+                    {forgetting ? '削除中...' : '本当に忘れる'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </GlassCard>
 
       {/* Sign Out */}

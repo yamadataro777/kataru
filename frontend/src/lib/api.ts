@@ -411,6 +411,58 @@ export async function submitCoachingFeedback(data: {
   return submitFeedback(data);
 }
 
+// === Trust Memory API (Phase 8) ===
+
+export interface TrustMemoryTheme {
+  label: string;
+  count: number;
+  last_seen: string;
+  decay_weight: number;
+}
+
+export interface TrustMemoryData {
+  recurring_themes?: TrustMemoryTheme[];
+  tone_signals?: {
+    prefers_structure?: boolean;
+    avoids_depth_push?: boolean;
+    last_updated: string;
+  };
+  session_history?: Array<{
+    date: string;
+    primary_mode: string;
+    max_depth: number;
+    structure_helped: boolean;
+    depth_felt_pushy: boolean;
+  }>;
+  version: number;
+  last_updated?: string;
+}
+
+export async function getTrustMemory(): Promise<{ trust_memory: TrustMemoryData | null }> {
+  return request('/api/auth/trust-memory');
+}
+
+export async function deleteTrustMemory(): Promise<void> {
+  await request('/api/auth/trust-memory', { method: 'DELETE' });
+}
+
+export async function submitGate8Evaluation(data: {
+  session_id: string;
+  continued_feeling: boolean | null;
+  creepy_feeling: boolean | null;
+  experiment_stage: string;
+  inject_variant: string | null;
+  has_prior_memory: boolean;
+  session_pair_number: number;
+  snapshot_version_at_start: number;
+  topic_bucket: string;
+}): Promise<void> {
+  await request('/api/round/gate8-evaluation', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // === Round Protocol API ===
 
 export interface RoundSessionMemory {
@@ -434,6 +486,11 @@ export interface RoundQuestionResponse {
   memory: RoundSessionMemory;
   latency_ms: number;
   used_fallback: boolean;
+  // Phase 8: experiment metadata
+  experiment_stage?: 'shadow' | 'gate8_ab' | 'live';
+  inject_variant?: 'inject' | 'control' | null;
+  has_prior_memory?: boolean;
+  snapshot_version_at_start?: number;
 }
 
 export interface RoundSummaryResponseV1 {
@@ -456,6 +513,8 @@ export interface RoundSummaryResponseV2 {
     content: string;
   };
   latency_ms: number;
+  // Phase 8
+  topic_bucket?: 'work' | 'emotion' | 'introspection' | 'casual';
 }
 
 export type RoundSummaryResponse = RoundSummaryResponseV1 | RoundSummaryResponseV2;

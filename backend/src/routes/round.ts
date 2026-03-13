@@ -41,6 +41,16 @@ import {
   normalizeQuote,
   buildExtractiveFallback,
 } from '../prompts/thinking-companion-prompt';
+import {
+  TrustMemory,
+  loadTrustMemory,
+  buildTrustMemoryHint,
+  updateTrustMemory,
+  saveTrustMemory,
+  getInjectVariant,
+  extractThemeLabels,
+  themeToTopicBucket,
+} from '../services/trust-memory';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -201,6 +211,39 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
       let failureReason: 'parse_failed' | 'timeout' | 'gemini_error' | null = null;
       let llmIsCrisis = false;
 
+      // Phase 8: Trust Memory — R1 preload
+      const trustMemoryStage = process.env.TRUST_MEMORY_STAGE || 'shadow';
+      let cachedTrustMemory: TrustMemory | null = null;
+      let trustMemoryHint: string | undefined;
+      let profileInjected = false;
+      let injectVariant: 'inject' | 'control' | null = null;
+
+      if (roundNum === 1) {
+        try {
+          const authReq = req as AuthenticatedRequest;
+          if (authReq.userId !== 'dev-user') {
+            cachedTrustMemory = await loadTrustMemory(authReq.userId);
+          }
+
+          // variant 決定（決定論的、DB保存なし）
+          if (trustMemoryStage === 'gate8_ab') {
+            injectVariant = getInjectVariant((req as AuthenticatedRequest).userId);
+          }
+
+          // inject 判定: gate8_ab の inject群、または live モード
+          const shouldInject =
+            (trustMemoryStage === 'gate8_ab' && injectVariant === 'inject') ||
+            trustMemoryStage === 'live';
+
+          if (shouldInject && cachedTrustMemory) {
+            trustMemoryHint = buildTrustMemoryHint(cachedTrustMemory);
+            profileInjected = !!trustMemoryHint;
+          }
+        } catch (e) {
+          console.error('Trust memory load failed (non-blocking):', e);
+        }
+      }
+
       // Crisis detection: 2-tier regex safety net
       const crisisSignal = detectCrisisRegex(finalTranscript);
 
@@ -223,7 +266,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
           prevQuestions,
           usePrevRatings ? prevRatings : undefined,
         );
-        const prompt = buildThinkingCompanionPrompt(context, roundNum, guardrail, sensitiveTopic.topicLabel);
+        const prompt = buildThinkingCompanionPrompt(context, roundNum, guardrail, sensitiveTopic.topicLabel, undefined, trustMemoryHint);
 
         try {
           const geminiStart = Date.now();
@@ -355,6 +398,8 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
           .update({
             total_rounds: roundNum,
             session_memory: persistedMemory,
+            // Phase 8: R1 snapshot — 既存 update に同梱（追加クエリなし）
+            ...(roundNum === 1 && cachedTrustMemory ? { trust_memory_snapshot: cachedTrustMemory } : {}),
           })
           .eq('id', session_id),
         supabase.from('round_events').insert({
@@ -387,6 +432,11 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             pull_back_signals: pullBack.signals,
             short_response_threshold: 30,
             failure_reason: failureReason,
+            // Phase 8 telemetry
+            experiment_stage: trustMemoryStage,
+            inject_variant: injectVariant,
+            profile_injected: profileInjected,
+            profile_hint_length: trustMemoryHint?.length ?? 0,
           },
         }),
       ]);
@@ -405,6 +455,11 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
         memory: tcResponse.memory,
         latency_ms: latencyMs,
         used_fallback: usedFallback,
+        // Phase 8: experiment metadata (for frontend Gate 8 evaluation)
+        experiment_stage: trustMemoryStage,
+        inject_variant: injectVariant,
+        has_prior_memory: cachedTrustMemory !== null,
+        snapshot_version_at_start: cachedTrustMemory?.version ?? 0,
       });
       return;
     }
@@ -524,10 +579,10 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // 2. Ownership チェック
+    // 2. Ownership チェック（Phase 8: trust_memory_snapshot を同時取得）
     const { data: session, error: sessionError } = await supabase
       .from('round_sessions')
-      .select('user_id, session_memory')
+      .select('user_id, session_memory, trust_memory_snapshot')
       .eq('id', session_id)
       .single();
 
@@ -614,10 +669,10 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // 4. V2 正規経路: DB からラウンドデータ読み取り
+    // 4. V2 正規経路: DB からラウンドデータ読み取り（Phase 8: rating/mode/depth 追加）
     const { data: dbRounds, error: roundsError } = await supabase
       .from('round_rounds')
-      .select('round_number, transcript, mirror, question, response_v2')
+      .select('round_number, transcript, mirror, question, response_v2, question_rating, mode_primary, depth_used')
       .eq('session_id', session_id)
       .order('round_number', { ascending: true });
 
@@ -742,10 +797,84 @@ router.post('/summary', requireAuth, async (req: Request, res: Response) => {
       },
     });
 
-    res.json({ ...summary, latency_ms: latencyMs });
+    // Phase 8: topic_bucket を summary レスポンスに含める
+    const transcriptsForThemes = (dbRounds || [])
+      .filter((r: { transcript?: string }) => r.transcript)
+      .map((r: { transcript: string }) => r.transcript);
+    const sessionThemeLabels = extractThemeLabels(transcriptsForThemes);
+    const topicBucket = themeToTopicBucket(sessionThemeLabels);
+
+    res.json({ ...summary, latency_ms: latencyMs, topic_bucket: topicBucket });
+
+    // Phase 8: Trust Memory 非同期更新（fire-and-forget）
+    const authReqForTm = req as AuthenticatedRequest;
+    if (authReqForTm.userId !== 'dev-user') {
+      const existingTm: TrustMemory | null = session.trust_memory_snapshot || null;
+      const snapshotVersion = existingTm?.version ?? 0;
+      const newTm = updateTrustMemory(existingTm, dbRounds || []);
+
+      saveTrustMemory(authReqForTm.userId, newTm, snapshotVersion)
+        .then(succeeded => {
+          supabase.from('round_events').insert({
+            session_id,
+            event_type: 'trust_memory_update',
+            data: {
+              attempted: true,
+              succeeded,
+              stale_prevented: !succeeded,
+              snapshot_version: snapshotVersion,
+              new_version: newTm.version,
+              theme_count: newTm.recurring_themes?.length ?? 0,
+            },
+          }).then(() => {});
+        })
+        .catch(err => console.error('Trust memory save failed (non-blocking):', err));
+    }
   } catch (err) {
     console.error('Summary error:', err);
     res.status(500).json({ error: 'まとめ生成に失敗しました' });
+  }
+});
+
+// POST /gate8-evaluation — Phase 8: Gate 8 evaluation telemetry
+router.post('/gate8-evaluation', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const {
+      session_id,
+      continued_feeling,
+      creepy_feeling,
+      experiment_stage,
+      inject_variant,
+      has_prior_memory,
+      session_pair_number,
+      snapshot_version_at_start,
+      topic_bucket,
+    } = req.body;
+
+    if (!session_id) {
+      res.status(400).json({ error: 'session_id is required' });
+      return;
+    }
+
+    await supabase.from('round_events').insert({
+      session_id,
+      event_type: 'gate8_evaluation',
+      data: {
+        continued_feeling: continued_feeling ?? null,
+        creepy_feeling: creepy_feeling ?? null,
+        experiment_stage,
+        inject_variant: inject_variant ?? null,
+        has_prior_memory: has_prior_memory ?? false,
+        session_pair_number: session_pair_number ?? 0,
+        snapshot_version_at_start: snapshot_version_at_start ?? 0,
+        topic_bucket: topic_bucket ?? 'casual',
+      },
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Gate 8 evaluation error:', err);
+    res.status(500).json({ error: 'Failed to save evaluation' });
   }
 });
 

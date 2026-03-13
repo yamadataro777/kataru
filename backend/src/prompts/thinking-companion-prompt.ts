@@ -329,6 +329,7 @@ export function buildThinkingCompanionPrompt(
   guardrailMode: GuardrailMode = 'standard',
   topicLabel: string | null = null,
   rerollConstraint?: string,
+  trustMemoryHint?: string,
 ): string {
   const scopeGuide =
     roundNumber === 1
@@ -344,7 +345,7 @@ export function buildThinkingCompanionPrompt(
 
   return `あなたは静かな伴走者です。ユーザーが声で考えを話しています。
 あなたの役割は、鏡のように映し返し、まだ言語化されていない部分に静かに光を当てること。
-
+${trustMemoryHint ? `\n## 傾向メモ（参考程度・絶対に言及禁止）\n${trustMemoryHint}\n\n注意: この情報を直接引用したり「前回は」と言及することは厳禁。echoの語彙選びやtone調整にのみ内部的に使うこと。echo一行目の言葉の選び方だけに反映する。\n` : ''}
 ## 核心ルール
 1. **Echo（最重要）**: ユーザーの**原文の言葉**を使って「わかっている」を伝える。AIの語彙に翻訳しない。「モヤモヤ」と言ったら「モヤモヤ」を使う。1-2文。
 2. **Sense**: ユーザーの言葉の中から、まだ本人が気づいていないパターンや接続を浮かび上がらせる。「整理された説明」ではない。常に仮説形（「〜のように聞こえます」「〜が見えてきた気がします」）。断定禁止。1-2文。

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { getProfile, updateProfile, deleteAccount } from '../services/profile';
+import { supabase } from '../services/supabase';
 
 const router = Router();
 
@@ -39,6 +40,39 @@ router.delete('/account', requireAuth, async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error deleting account:', error);
     res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+// GET /api/auth/trust-memory — Phase 8: ユーザーの傾向記憶を取得
+router.get('/trust-memory', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req as AuthenticatedRequest;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('trust_memory')
+      .eq('id', userId)
+      .single();
+    if (error) { res.status(500).json({ error: 'Failed to get trust memory' }); return; }
+    res.json({ trust_memory: data?.trust_memory || null });
+  } catch (error) {
+    console.error('Error getting trust memory:', error);
+    res.status(500).json({ error: 'Failed to get trust memory' });
+  }
+});
+
+// DELETE /api/auth/trust-memory — Phase 8: 傾向記憶を削除
+router.delete('/trust-memory', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { userId } = req as AuthenticatedRequest;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ trust_memory: null })
+      .eq('id', userId);
+    if (error) { res.status(500).json({ error: 'Failed to clear trust memory' }); return; }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error clearing trust memory:', error);
+    res.status(500).json({ error: 'Failed to clear trust memory' });
   }
 });
 

@@ -1,5 +1,83 @@
 # Kataru 開発の軌跡
 
+## 2026-03-13: Phase 8 — User Profile / Trust Memory
+
+### 概要
+セッション間でユーザーの傾向（テーマ、トーン嗜好）を蓄積し、次回セッションの Echo 一行目に微調整で「わかっている感」を出す機能。デフォルトは shadow mode（蓄積のみ・注入無効）。Gate 7 通過後に A/B 実験を開始する。
+
+### 変更内容
+1. **Migration**: `014_trust_memory.sql` — `profiles.trust_memory JSONB`, `round_sessions.trust_memory_snapshot JSONB`, `save_trust_memory_cas()` RPC
+2. **Trust Memory Service**: `backend/src/services/trust-memory.ts` — 型定義、テーマ抽出（ルールベース、LLM不使用）、tone_signals再算出、decay（0.8係数）、CAS保存、variant割当（hash決定論的）
+3. **R1 Preload**: POST /question で R1 時に `loadTrustMemory()` → snapshot を既存 session update に同梱（追加クエリなし）
+4. **Summary 非同期更新**: POST /summary 後に fire-and-forget で `updateTrustMemory()` + `saveTrustMemory()`（CAS version check 付き）
+5. **Prompt 拡張**: `buildThinkingCompanionPrompt()` に `trustMemoryHint?` 引数追加、「傾向メモ」セクションを Echo 前に注入（200字以内、直接言及禁止）
+6. **Auth API**: GET/DELETE `/api/auth/trust-memory` — プライバシーUI用
+7. **Frontend API**: `getTrustMemory()`, `deleteTrustMemory()`, `submitGate8Evaluation()` + response型にPhase 8フィールド追加
+8. **Settings UI**: MEMORY セクション（テーマ一覧、傾向表示、「すべて忘れる」確認ダイアログ付き）
+9. **Gate 8 評価UI**: summary 後に「続き感」「不自然感」の任意評価（gate8_ab + has_prior_memory 時のみ表示）
+10. **テレメトリ**: `experiment_stage`, `inject_variant`, `profile_injected`, `trust_memory_update`, `gate8_evaluation` イベント
+11. **topic_bucket**: テーマラベル→4カテゴリ正規化（work/emotion/introspection/casual）、summary レスポンスに含める
+
+### 設計判断
+- **全 JSONB + optional 型**: 固いスキーマ禁止。TrustMemory の全フィールドは optional
+- **LLM 追加コール禁止**: テーマ抽出はキーワードマッチのみ（6カテゴリ、各2-6キーワード）
+- **DELETE 復活防止**: version による CAS。DELETE → trust_memory=null → version 消失 → stale write は WHERE にマッチしない
+- **variant は DB 保存なし**: `hash(userId + salt) % 2` で決定論的。セッション間でブレない
+- **inject は shadow mode では無効**: TRUST_MEMORY_STAGE 環境変数で 3段階制御
+- **snapshot は R1 の既存 update に同梱**: 追加クエリなし、レイテンシ影響ゼロ
+- **Gate 8 評価は gate8_ab + has_prior_memory のみ**: 初回セッションでは表示しない
+
+### 実験段階（TRUST_MEMORY_STAGE）
+| 値 | 動作 | 評価UI |
+|---|---|---|
+| `shadow`（デフォルト） | 蓄積のみ、注入なし | なし |
+| `gate8_ab` | inject/control A/B | あり（両群） |
+| `live` | 全ユーザー注入 | なし |
+
+### 変更ファイル
+- `backend/src/migrations/014_trust_memory.sql` (新規)
+- `backend/src/services/trust-memory.ts` (新規)
+- `backend/src/routes/round.ts` (R1 preload, snapshot, summary更新, gate8-evaluation endpoint)
+- `backend/src/prompts/thinking-companion-prompt.ts` (trustMemoryHint引数, 傾向メモ注入)
+- `backend/src/routes/auth.ts` (GET/DELETE trust-memory)
+- `frontend/src/lib/api.ts` (API関数, 型拡張)
+- `frontend/src/app/settings/page.tsx` (MEMORY セクション)
+- `frontend/src/app/record/page.tsx` (experiment metadata, Gate 8 評価UI)
+
+---
+
+## 2026-03-13: Phase 7 — Maybe（仮説スロット）
+
+### 概要
+R3限定で「もしかすると…」形式の控えめな仮説を提示する機能。侵襲性最小、外した時に不快にならないことが最重要設計目標。
+
+### 変更内容
+1. **Migration**: `013_maybe_slot.sql` — `maybe_fired BOOLEAN DEFAULT false` カラム追加
+2. **SessionMemory 拡張**: `previous_had_maybe?: boolean` — サーバー側で決定、LLM出力からparseしない
+3. **TurnResponseV2 拡張**: `maybe: string | null` フィールド追加
+4. **sanitizeMaybe()**: 仮説形の安全化フィルター（prefix必須 + ヘッジ表現必須 + 1文 + 60文字以内 + 疑問文/感嘆文reject）
+5. **clampMaybe()**: 発火条件の runtime gate（R3 only + depth>=2 + 前ラウンドdepth>=2 + memory核非null + 連続発火禁止 + standard guardrail only）
+6. **プロンプト拡張**: Maybeセクション（発火条件 + フォーマット厳守 + Senseとの違い + 外した時のルール）、Few-shot例、生成手順Step 4追加、JSON出力形式にmaybe追加
+7. **Question handler**: clampDepth後にclampMaybe呼び出し、サーバー側でprevious_had_maybe決定
+8. **Reroll handler**: depth変数を2系統に分離（previousDepthForReroll vs prevRoundDepthForMaybe）、prevRoundクエリにdepth_used/response_v2追加
+9. **DB保存**: response_v2にmaybe、maybe_firedカラム
+10. **テレメトリ**: round_eventsにmaybe_fired
+11. **フロントエンド**: lime色のMaybe GlassCard（Sense-Next間、null時は非表示、italic+opacity-85）
+
+### 設計判断
+- **制御状態の唯一の真実**: `tcResponse.maybe !== null` → `maybe_fired`, `persistedMemory.previous_had_maybe`, `response_v2.maybe` すべてここから派生
+- **sanitize と clamp の分離**: sanitize=形式検証（パーサー内）、clamp=発火条件（ルートハンドラ）
+- **Reroll depth 2系統分離**: clampDepthには現在roundのdepth、clampMaybeにはR2の実depthを渡す（混ぜるとdepth偽装事故）
+- **発火率30%以下**: Gate 7評価指標、runtime制約にはしない
+- **キルスイッチ**: `clampMaybe()` を `return null;` で全セッション無効化
+- **patchDepthIntoMemory**: fallback/crisis時は `previous_had_maybe: false` を設定
+
+### Gate 7 計測クエリ
+- ユーザー露出率: `round_rounds WHERE round_number = 3 AND created_at >= '2026-03-14'`
+- 生成試行率: `round_events WHERE event_type IN ('round_completed', 'round_rerolled') AND round_number = 3`
+
+---
+
 ## 2026-03-13: Phase 6 — 深度制御（Depth 1-3）
 
 ### 概要

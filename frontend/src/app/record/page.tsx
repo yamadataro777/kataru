@@ -17,8 +17,10 @@ import {
   updateRoundRound,
   rerollRoundQuestion,
   deleteRoundRound,
+  submitGate8Evaluation,
   RoundSessionMemory,
 } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 // --- Types ---
 
@@ -80,6 +82,7 @@ const DURATIONS = [60, 90, 120] as const;
 
 export default function RecordPage() {
   const router = useRouter();
+  const { profile } = useAuth();
 
   // Phase state
   const [phase, setPhase] = useState<Phase>('idle');
@@ -98,6 +101,17 @@ export default function RecordPage() {
   // UI state
   const [error, setError] = useState<string | null>(null);
   const [isRerolling, setIsRerolling] = useState(false);
+
+  // Phase 8: experiment metadata (from R1 response)
+  const [experimentMeta, setExperimentMeta] = useState<{
+    experiment_stage?: string;
+    inject_variant?: string | null;
+    has_prior_memory?: boolean;
+    snapshot_version_at_start?: number;
+  } | null>(null);
+  const [gate8ContinuedFeeling, setGate8ContinuedFeeling] = useState<boolean | null>(null);
+  const [gate8CreepyFeeling, setGate8CreepyFeeling] = useState<boolean | null>(null);
+  const [topicBucket, setTopicBucket] = useState<string | null>(null);
 
   // Hooks
   const { isRecording, startRecording, stopRecording, audioBlob, duration, analyserNode } =
@@ -213,6 +227,16 @@ export default function RecordPage() {
           }
 
           const result = await submitRoundQuestion(formData);
+
+          // Phase 8: capture experiment metadata from R1
+          if (snap.roundNumber === 1 && result.experiment_stage) {
+            setExperimentMeta({
+              experiment_stage: result.experiment_stage,
+              inject_variant: result.inject_variant,
+              has_prior_memory: result.has_prior_memory,
+              snapshot_version_at_start: result.snapshot_version_at_start,
+            });
+          }
 
           setRounds((prev) => [
             ...prev,
@@ -373,6 +397,11 @@ export default function RecordPage() {
     try {
       const snap = stateRef.current;
       const result = await submitRoundSummary(snap.sessionId!);
+
+      // Phase 8: capture topic_bucket
+      if ('topic_bucket' in result && result.topic_bucket) {
+        setTopicBucket(result.topic_bucket as string);
+      }
 
       // V2/V1 判定
       if ('version' in result && result.version === 2) {
@@ -966,9 +995,95 @@ export default function RecordPage() {
                 </div>
               </div>
 
+              {/* Phase 8: Gate 8 Evaluation (gate8_ab + has_prior_memory only) */}
+              {experimentMeta?.experiment_stage === 'gate8_ab' && experimentMeta?.has_prior_memory && (
+                <GlassCard variant="cyan" className="p-4">
+                  <p className="text-[10px] tracking-[2px] text-neon-cyan opacity-60 mb-3">
+                    フィードバック（任意）
+                  </p>
+
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-hud-white opacity-80 mb-2">
+                        前回からの続き感はありましたか？
+                      </p>
+                      <div className="flex gap-2">
+                        {([
+                          { value: true, label: 'はい' },
+                          { value: false, label: 'いいえ' },
+                          { value: null, label: 'スキップ' },
+                        ] as const).map(({ value, label }) => (
+                          <button
+                            key={label}
+                            onClick={() => setGate8ContinuedFeeling(value)}
+                            className={`flex-1 py-2 rounded-lg border text-[10px] tracking-wider transition-all duration-200 cursor-pointer ${
+                              gate8ContinuedFeeling === value
+                                ? 'border-neon-cyan text-neon-cyan bg-[rgba(0,212,255,0.15)]'
+                                : 'border-[rgba(255,255,255,0.1)] text-hud-white-dim bg-transparent'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-hud-white opacity-80 mb-2">
+                        不自然に感じる部分はありましたか？
+                      </p>
+                      <div className="flex gap-2">
+                        {([
+                          { value: true, label: 'はい' },
+                          { value: false, label: 'いいえ' },
+                          { value: null, label: 'スキップ' },
+                        ] as const).map(({ value, label }) => (
+                          <button
+                            key={label}
+                            onClick={() => setGate8CreepyFeeling(value)}
+                            className={`flex-1 py-2 rounded-lg border text-[10px] tracking-wider transition-all duration-200 cursor-pointer ${
+                              gate8CreepyFeeling === value
+                                ? 'border-neon-cyan text-neon-cyan bg-[rgba(0,212,255,0.15)]'
+                                : 'border-[rgba(255,255,255,0.1)] text-hud-white-dim bg-transparent'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </GlassCard>
+              )}
+
               {/* Back to home */}
               <div className="pb-4">
-                <NeonButton onClick={() => router.push('/')} variant="cyan" className="w-full">
+                <NeonButton
+                  onClick={() => {
+                    // Phase 8: submit gate8 evaluation telemetry (fire-and-forget)
+                    if (
+                      experimentMeta?.experiment_stage === 'gate8_ab' &&
+                      experimentMeta?.has_prior_memory &&
+                      sessionId &&
+                      (gate8ContinuedFeeling !== null || gate8CreepyFeeling !== null)
+                    ) {
+                      submitGate8Evaluation({
+                        session_id: sessionId,
+                        continued_feeling: gate8ContinuedFeeling,
+                        creepy_feeling: gate8CreepyFeeling,
+                        experiment_stage: experimentMeta.experiment_stage,
+                        inject_variant: experimentMeta.inject_variant ?? null,
+                        has_prior_memory: true,
+                        session_pair_number: profile?.session_count ?? 0,
+                        snapshot_version_at_start: experimentMeta.snapshot_version_at_start ?? 0,
+                        topic_bucket: topicBucket ?? 'casual',
+                      }).catch(() => {});
+                    }
+                    router.push('/');
+                  }}
+                  variant="cyan"
+                  className="w-full"
+                >
                   ホームへ
                 </NeonButton>
               </div>

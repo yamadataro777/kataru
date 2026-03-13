@@ -1,5 +1,17 @@
 # Git Worktree Log
 
+## 2026-03-13 (Phase 8)
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: (pending) — feat: Phase 8 Trust Memory — shadow mode蓄積・Gate 8 A/B基盤
+- **Changes**: 014_trust_memory.sql、trust-memory.ts（テーマ抽出/decay/CAS）、round.ts R1 preload+snapshot+summary更新+gate8-evaluation、prompt trustMemoryHint注入、auth.ts GET/DELETE trust-memory、api.ts Trust Memory API、Settings MEMORY UI、record Gate8評価UI
+
+## 2026-03-13 (Phase 7)
+- **Branch**: main
+- **Action**: commit + push
+- **Commit**: e6f7d91 — feat: Phase 7 Maybe（仮説スロット）— R3限定の控えめな仮説提示
+- **Changes**: sanitizeMaybe/clampMaybe、プロンプトMaybeセクション、round.ts clampMaybe統合（Reroll depth 2系統分離）、013_maybe_slot.sql、フロントlime色Maybeカード
+
 ## 2026-03-13 (Phase 5)
 - **Branch**: main
 - **Action**: commit + push
