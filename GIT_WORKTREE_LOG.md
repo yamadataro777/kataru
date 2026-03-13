@@ -3,7 +3,7 @@
 ## 2026-03-13 (Phase 5)
 - **Branch**: main
 - **Action**: commit + push
-- **Commit**: (pending) — feat: Phase 5 軽量なモード方向感 — プロンプト中心の分化
+- **Commit**: 7f14ae5 — feat: Phase 5 軽量なモード方向感 — プロンプト中心の分化
 - **Changes**: mode判定precedence + mode別ルール/禁止/Few-shot置換、mode×ラウンド補足、生成手順追加、summary timeout分離
 
 ## 2026-03-13 (Phase 4)

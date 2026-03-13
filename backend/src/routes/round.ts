@@ -27,6 +27,7 @@ import {
   detectSensitiveTopic,
   detectPullBack,
   resolveGuardrail,
+  clampDepth,
   TurnResponseV2,
   SensitiveTopicResult,
   PullBackSignal,
@@ -45,6 +46,43 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const GEMINI_TIMEOUT_MS = 12000;
 const SUMMARY_TIMEOUT_MS = 15000;
+
+// --- Phase 6: Depth helpers ---
+
+/**
+ * normalizePersistedDepth — DB から読み出した depth 値を安全に正規化する。
+ * DB / JSONB に格納された値は型保証がない（9, 0, null, undefined が混入しうる）。
+ */
+function normalizePersistedDepth(value: unknown): 1 | 2 | 3 | null {
+  return value === 1 || value === 2 || value === 3 ? value : null;
+}
+
+/**
+ * normalizeDepthInTcResponse — tcResponse 内部の depth 整合を取る。
+ * tcResponse.depth_level と tcResponse.memory.current_depth を同値にする。
+ */
+function normalizeDepthInTcResponse(tcResponse: TurnResponseV2): void {
+  const depth = normalizePersistedDepth(tcResponse.depth_level) ?? 1;
+  tcResponse.depth_level = depth;
+  tcResponse.memory.current_depth = depth;
+}
+
+/**
+ * patchDepthIntoMemory — 既存 memory の depth だけを更新する。
+ * fallback / crisis で「memory を進めないが depth は整合させる」ために使う。
+ */
+function patchDepthIntoMemory(
+  base: SessionMemory | null,
+  depth: 1 | 2 | 3,
+): SessionMemory {
+  const empty: SessionMemory = {
+    working_hypothesis: null,
+    open_loops: [],
+    core_tension: null,
+    recent_question_angle: 'blindspot',
+  };
+  return { ...(base ?? empty), current_depth: depth };
+}
 
 // POST /session — Create round session
 router.post('/session', requireAuth, async (req: Request, res: Response) => {
@@ -204,15 +242,27 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             llmIsCrisis = parsed.is_crisis;
             if (parsed.is_crisis) {
               tcResponse = generateCrisisResponse(finalTranscript);
+              normalizeDepthInTcResponse(tcResponse);
               guardrailLog = 'crisis_fixed';
               crisisSource = crisisSignal.lowConfidence ? 'llm_with_regex_low' : 'llm_only';
             } else {
+              // Phase 6: clampDepth
+              const previousDepth = normalizePersistedDepth(memory?.current_depth) ?? 1;
+              const clampedDepth = clampDepth(
+                parsed.depth_level ?? 1,
+                roundNum,
+                previousDepth,
+                guardrail,
+              );
+              parsed.depth_level = clampedDepth;
+              normalizeDepthInTcResponse(parsed);
               tcResponse = parsed;
               guardrailLog = guardrail;
             }
           } else {
             console.error('Failed to parse TC response:', geminiResult.text.substring(0, 300));
             tcResponse = generateFallbackEchoSenseNext(finalTranscript, roundNum, memory);
+            normalizeDepthInTcResponse(tcResponse);
             usedFallback = true;
             failureReason = 'parse_failed';
             guardrailLog = guardrail;
@@ -221,10 +271,26 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
           geminiLatencyMs = Date.now() - startTime; // approximate
           console.error('Gemini TC analysis failed:', geminiErr);
           tcResponse = generateFallbackEchoSenseNext(finalTranscript, roundNum, memory);
+          normalizeDepthInTcResponse(tcResponse);
           usedFallback = true;
           failureReason = (geminiErr as Error).message === 'gemini_timeout' ? 'timeout' : 'gemini_error';
           guardrailLog = guardrail;
         }
+      }
+
+      // Phase 6: normalizeDepthInTcResponse for high-confidence crisis path
+      if (crisisSignal.highConfidence) {
+        normalizeDepthInTcResponse(tcResponse);
+      }
+
+      // Phase 6: persistedMemory — tcResponse.memory と DB 保存 memory を分ける
+      let persistedMemory: SessionMemory;
+      if (usedFallback) {
+        persistedMemory = patchDepthIntoMemory(memory, tcResponse.depth_level);
+      } else if (tcResponse.is_crisis) {
+        persistedMemory = patchDepthIntoMemory(memory, 1);
+      } else {
+        persistedMemory = tcResponse.memory;
       }
 
       const latencyMs = Date.now() - startTime;
@@ -247,7 +313,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
           question: tcResponse.next,
           latency_ms: latencyMs,
           used_fallback: usedFallback,
-          memory: tcResponse.memory,
+          memory: persistedMemory,
           question_angle: tcResponse.memory.recent_question_angle,
           prompt_version: 'tc-v1',
           used_previous_ratings: usePrevRatings && prevRatings.length > 0,
@@ -257,7 +323,9 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             next: tcResponse.next,
             mode: tcResponse.mode,
             is_crisis: tcResponse.is_crisis,
+            depth_level: tcResponse.depth_level,
           },
+          depth_used: tcResponse.depth_level,
           // TODO(Phase2): Remove temporary mode observability after Phase 2 evaluation
           mode_primary: tcResponse.mode.primary,
           mode_secondary: tcResponse.mode.secondary || null,
@@ -273,7 +341,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
           .from('round_sessions')
           .update({
             total_rounds: roundNum,
-            session_memory: tcResponse.memory,
+            session_memory: persistedMemory,
           })
           .eq('id', session_id),
         supabase.from('round_events').insert({
@@ -292,6 +360,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             is_crisis: tcResponse.is_crisis,
             prompt_tokens: promptTokens,
             output_tokens: outputTokens,
+            depth_used: tcResponse.depth_level,
             // Phase 2 telemetry
             regex_high: crisisSignal.highConfidence,
             regex_low: crisisSignal.lowConfidence,
@@ -742,7 +811,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
     // 1. Fetch existing round
     const { data: round, error: roundFetchError } = await supabase
       .from('round_rounds')
-      .select('id, session_id, round_number, transcript, mirror, question, question_angle, reroll_count, response_v2, memory')
+      .select('id, session_id, round_number, transcript, mirror, question, question_angle, reroll_count, response_v2, memory, depth_used')
       .eq('id', roundId)
       .single();
 
@@ -811,6 +880,18 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
       baseMemory = prevRound?.memory || null;
     }
 
+    // Phase 6: depth は現在 round から継承（runtime 正規化付き）
+    const previousDepthForReroll: 1 | 2 | 3 =
+      normalizePersistedDepth(round.depth_used) ??
+      normalizePersistedDepth((round.response_v2 as any)?.depth_level) ??
+      normalizePersistedDepth((round.memory as SessionMemory | null)?.current_depth) ??
+      normalizePersistedDepth(baseMemory?.current_depth) ??
+      1;
+
+    if (baseMemory) {
+      baseMemory.current_depth = previousDepthForReroll;
+    }
+
     // 5. Sibling rounds for context
     const { data: siblings } = await supabase
       .from('round_rounds')
@@ -834,6 +915,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
     // Top-level backward-compat columns are mirror (= echo) and question (= next)
     function buildRerollUpdateFields(
       response: TurnResponseV2,
+      persistedMem: SessionMemory,
       opts: { usedFallback: boolean; latencyMs: number; questionAngle: string },
     ) {
       return {
@@ -845,9 +927,11 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
           next: response.next,
           mode: response.mode,
           is_crisis: response.is_crisis,
+          depth_level: response.depth_level,
         },
+        depth_used: response.depth_level,
         question_angle: opts.questionAngle,
-        memory: response.memory,
+        memory: persistedMem,
         question_rating: null,
         used_fallback: opts.usedFallback,
         latency_ms: opts.latencyMs,
@@ -881,13 +965,13 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
     if (crisisSignal.highConfidence) {
       // High-conf regex crisis redirect
       const crisisResponse = generateCrisisResponse(round.transcript);
-      const fields = buildRerollUpdateFields(crisisResponse, {
+      normalizeDepthInTcResponse(crisisResponse);
+      const crisisPersisted = patchDepthIntoMemory(baseMemory, 1);
+      const fields = buildRerollUpdateFields(crisisResponse, crisisPersisted, {
         usedFallback: false,
         latencyMs: Date.now() - startTime,
         questionAngle: 'crisis_fixed',
       });
-      // Override memory to baseMemory for crisis
-      fields.memory = baseMemory as unknown as TurnResponseV2['memory'];
 
       const updated = await applyRerollUpdate(fields);
       if (!updated) {
@@ -898,7 +982,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
       // Update session memory
       await supabase
         .from('round_sessions')
-        .update({ session_memory: baseMemory })
+        .update({ session_memory: crisisPersisted })
         .eq('id', round.session_id);
 
       // Event
@@ -918,6 +1002,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
           used_fallback: false,
           crisis_redirected: true,
           crisis_source: 'regex_high',
+          depth_used: 1,
         },
       });
 
@@ -930,7 +1015,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
         sense: crisisResponse.sense,
         next: crisisResponse.next,
         is_crisis: true,
-        memory: baseMemory,
+        memory: crisisPersisted,
         latency_ms: Date.now() - startTime,
         used_fallback: false,
       });
@@ -980,12 +1065,13 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
         // 9a. LLM crisis
         if (parsed.is_crisis) {
           const crisisResponse = generateCrisisResponse(round.transcript);
-          const fields = buildRerollUpdateFields(crisisResponse, {
+          normalizeDepthInTcResponse(crisisResponse);
+          const llmCrisisPersisted = patchDepthIntoMemory(baseMemory, 1);
+          const fields = buildRerollUpdateFields(crisisResponse, llmCrisisPersisted, {
             usedFallback: false,
             latencyMs: Date.now() - startTime,
             questionAngle: 'crisis_fixed',
           });
-          fields.memory = baseMemory as unknown as TurnResponseV2['memory'];
 
           const updated = await applyRerollUpdate(fields);
           if (!updated) {
@@ -995,7 +1081,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
 
           await supabase
             .from('round_sessions')
-            .update({ session_memory: baseMemory })
+            .update({ session_memory: llmCrisisPersisted })
             .eq('id', round.session_id);
 
           await supabase.from('round_events').insert({
@@ -1014,6 +1100,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
               used_fallback: false,
               crisis_redirected: true,
               crisis_source: 'llm',
+              depth_used: 1,
             },
           });
 
@@ -1026,19 +1113,28 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
             sense: crisisResponse.sense,
             next: crisisResponse.next,
             is_crisis: true,
-            memory: baseMemory,
+            memory: llmCrisisPersisted,
             latency_ms: Date.now() - startTime,
             used_fallback: false,
           });
           return;
         }
 
-        // 9c. Normal reroll success
+        // 9c. Normal reroll success — Phase 6: clampDepth
+        const clampedDepth = clampDepth(
+          parsed.depth_level ?? 1,
+          round.round_number,
+          previousDepthForReroll,
+          guardrail,
+        );
+        parsed.depth_level = clampedDepth;
+        normalizeDepthInTcResponse(parsed);
         tcResponse = parsed;
       } else {
         // 9b. Parse failure → fallback
         console.error('Failed to parse TC reroll response:', geminiResult.text.substring(0, 500));
         tcResponse = generateFallbackEchoSenseNext(round.transcript, round.round_number, baseMemory);
+        normalizeDepthInTcResponse(tcResponse);
         usedFallback = true;
         failureReason = 'parse_failed';
       }
@@ -1047,23 +1143,28 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
       geminiLatencyMs = Date.now() - startTime;
       console.error('Gemini TC reroll failed:', geminiErr);
       tcResponse = generateFallbackEchoSenseNext(round.transcript, round.round_number, baseMemory);
+      normalizeDepthInTcResponse(tcResponse);
       usedFallback = true;
       failureReason = (geminiErr as Error).message === 'gemini_timeout' ? 'timeout' : 'gemini_error';
     }
 
     const latencyMs = Date.now() - startTime;
 
-    // For fallback: don't advance session memory
-    const newMemory = usedFallback ? baseMemory : tcResponse.memory;
+    // Phase 6: persistedMemory for reroll
+    let rerollPersistedMemory: SessionMemory;
+    if (usedFallback) {
+      rerollPersistedMemory = patchDepthIntoMemory(baseMemory, tcResponse.depth_level);
+    } else if (tcResponse.is_crisis) {
+      rerollPersistedMemory = patchDepthIntoMemory(baseMemory, 1);
+    } else {
+      rerollPersistedMemory = tcResponse.memory;
+    }
 
-    const fields = buildRerollUpdateFields(tcResponse, {
+    const fields = buildRerollUpdateFields(tcResponse, rerollPersistedMemory, {
       usedFallback,
       latencyMs,
       questionAngle: tcResponse.memory.recent_question_angle,
     });
-    if (usedFallback) {
-      fields.memory = baseMemory as unknown as TurnResponseV2['memory'];
-    }
 
     const updated = await applyRerollUpdate(fields);
     if (!updated) {
@@ -1074,7 +1175,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
     // 10. Update session memory
     await supabase
       .from('round_sessions')
-      .update({ session_memory: newMemory })
+      .update({ session_memory: rerollPersistedMemory })
       .eq('id', round.session_id);
 
     // 11. Event
@@ -1098,6 +1199,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
         sensitive_topic: sensitiveTopic.topicLabel,
         pull_back_detected: pullBack.detected,
         crisis_redirected: false,
+        depth_used: tcResponse.depth_level,
       },
     });
 
@@ -1111,7 +1213,7 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
       sense: tcResponse.sense,
       next: tcResponse.next,
       is_crisis: tcResponse.is_crisis,
-      memory: usedFallback ? baseMemory : tcResponse.memory,
+      memory: rerollPersistedMemory,
       latency_ms: latencyMs,
       used_fallback: usedFallback,
     });

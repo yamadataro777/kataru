@@ -7,6 +7,7 @@ export interface SessionMemory {
   open_loops: string[];
   core_tension: string | null;
   recent_question_angle: QuestionAngle;
+  current_depth?: 1 | 2 | 3;  // Phase 6
 }
 
 export interface RoundResponse {

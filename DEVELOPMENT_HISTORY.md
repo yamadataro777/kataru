@@ -1,5 +1,30 @@
 # Kataru 開発の軌跡
 
+## 2026-03-13: Phase 6 — 深度制御（Depth 1-3）
+
+### 概要
+問いの深さを3段階（Depth 1-3）で制御する機能を実装。ユーザーが自分から深い話題に触れた時のみ深い問いを投げる。深さはユーザーが決める。
+
+### 変更内容
+1. **Migration**: `012_depth_control.sql` — `depth_used` カラムの CHECK 制約追加（1-3範囲）
+2. **SessionMemory 拡張**: `current_depth?: 1 | 2 | 3` フィールド追加
+3. **TurnResponseV2 拡張**: `depth_level: 1 | 2 | 3` フィールド追加
+4. **clampDepth() 関数**: R1=常にDepth1、ガードレール発動中=Depth1、2段階ジャンプ禁止（1→3不可）、深度低下は制御しない
+5. **プロンプト深度セクション**: Depth判定ルール、上げてよい条件（シグナル＋段階制限）、上げてはいけない場合を明示
+6. **depth同期helper**: `normalizePersistedDepth`, `normalizeDepthInTcResponse`, `patchDepthIntoMemory`
+7. **persistedMemory パターン**: fallback/crisis では memory を進めないが depth は整合させる
+8. **全保存経路で invariant 保証**: `depth_used` = `response_v2.depth_level` = `persistedMemory.current_depth`
+9. **テレメトリ**: round_events に `depth_used` 追加
+
+### 設計判断
+- Depth × Mode は直交（Mode=トーン、Depth=nextの深さ）
+- ガードレール発動中は Depth 1 強制
+- リロール時は depth を現在 round から明示継承（角度だけ変える）
+- キルスイッチ: `clampDepth()` 1箇所で `return 1` にすれば全セッション Depth 1
+- フロントエンド変更なし（depth はユーザーに見せない）
+
+---
+
 ## 2026-03-13: Phase 5 — 軽量なモード方向感
 
 ### 概要

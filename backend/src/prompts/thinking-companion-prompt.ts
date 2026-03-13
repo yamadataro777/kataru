@@ -46,6 +46,7 @@ export interface TurnResponseV2 {
   mode: ModePair;
   memory: SessionMemory;
   is_crisis: boolean;
+  depth_level: 1 | 2 | 3;  // Phase 6
 }
 
 // --- Crisis Detection (2-tier regex safety net) ---
@@ -151,8 +152,10 @@ export function generateCrisisResponse(transcript: string): TurnResponseV2 {
       open_loops: [],
       core_tension: null,
       recent_question_angle: 'emotion',
+      current_depth: 1,
     },
     is_crisis: true,
+    depth_level: 1 as const,
   };
 }
 
@@ -231,15 +234,18 @@ function buildGuardrailConstraint(mode: GuardrailMode, topicLabel: string | null
     case 'gentle_empathy':
       return `\n## 応答制約: gentle_empathy（${topicLabel}）
 Echo: 感情を短く受け止める / Sense: 仮説1つまで、因果説明しない / Next: 招待型のみ（「もしよければ」）
-分析・構造化・リフレーミング禁止\n`;
+分析・構造化・リフレーミング禁止
+深度: Depth 1固定\n`;
 
     case 'soft_empathy':
       return `\n## 応答制約: soft_empathy（${topicLabel}）
-Echo: 感情や状況を短く受け止める / Sense: 仮説1つまで、因果説明しない / Next: 選択肢型、助言禁止・原因分析禁止・整理しすぎた説明禁止\n`;
+Echo: 感情や状況を短く受け止める / Sense: 仮説1つまで、因果説明しない / Next: 選択肢型、助言禁止・原因分析禁止・整理しすぎた説明禁止
+深度: Depth 1固定\n`;
 
     case 'soft_reorient':
       return `\n## 応答制約: soft_reorient
-深掘り禁止 / 対象・時間軸・抽象度のどれかを必ず変える / 同じ論点の言い換え再質問禁止 / Nextは一問だけ、説明を足さない\n`;
+深掘り禁止 / 対象・時間軸・抽象度のどれかを必ず変える / 同じ論点の言い換え再質問禁止 / Nextは一問だけ、説明を足さない
+深度: Depth 1固定\n`;
 
     case 'standard':
       return '';
@@ -283,7 +289,9 @@ export function buildContextV2(
     if (memory.working_hypothesis) ctx += `- working_hypothesis: ${memory.working_hypothesis}\n`;
     if (memory.open_loops?.length > 0) ctx += `- open_loops: ${memory.open_loops.join('、')}\n`;
     if (memory.core_tension) ctx += `- core_tension: ${memory.core_tension}\n`;
-    ctx += `- recent_question_angle: ${memory.recent_question_angle}\n\n`;
+    ctx += `- recent_question_angle: ${memory.recent_question_angle}\n`;
+    if (memory.current_depth) ctx += `- current_depth: ${memory.current_depth}\n`;
+    ctx += '\n';
   }
 
   ctx += `## 文字起こし（最新1000文字）:\n${processed}`;
@@ -321,7 +329,7 @@ export function buildThinkingCompanionPrompt(
 ): string {
   const scopeGuide =
     roundNumber === 1
-      ? `**探索**: 最も感情が乗っている部分 or 最も曖昧な部分を特定する。
+      ? `**探索（Depth 1固定）**: 最も感情が乗っている部分 or 最も曖昧な部分を特定する。
 テクニック: 対比（AとBどちらが近い？）、具体化（例えば？）、時間軸（いつから？）`
       : roundNumber === 2
         ? `**深掘り**: 構造的な障壁・矛盾・トレードオフに焦点を当てる。
@@ -395,6 +403,34 @@ mixed utterance（「AとBで迷ってる。もう疲れた」等）は、感情
 - Next: パターンの例外・起源・別の見方を問う。持ち帰れる問い
 - 禁止: 感情受容だけで終わる / 具体的行動提案 / 選択肢の整理
 
+## 深度レベル（Depth 1-3）— Next の深さ制御
+
+Depth は Next（問い）の深さを決める。Echo と Sense には影響しない。
+
+### Depth判定（mode判定の後に実行）
+**Depth 1（デフォルト）**: 事実確認・選択肢整理・状況把握レベルの問い。
+**Depth 2**: 構造的矛盾・トレードオフ・「わかっているけど動けない」を浮かび上がらせる問い。
+**Depth 3**: 前提・信念・繰り返しパターン・「自分はこういう人間だ」に触れる問い。
+
+### Depthを上げてよい条件（すべて満たす場合のみ）:
+1. ユーザーの発話の中に以下のシグナルが**主題として**存在する（フィラーや枕詞は除外）
+   - Depth 2シグナル: 構造的葛藤（「〜したいけど〜もしたい」「わかってるんだけど」「どっちも正しい」）
+   - Depth 3シグナル: 自己参照・パターン言及（「私っていつも」「結局」「本当は」「前も同じことがあった」「毎回こうなる」「〜べきだと思う」「〜な人間だから」）
+2. 前ラウンドの current_depth から +1 まで（2段階ジャンプ禁止）
+3. R1は Depth 1 固定
+
+### Depthを上げてはいけない場合:
+- ユーザーが浅い話題を選んでいる
+- シグナルがない
+- AIが「本当は深い問題があるはず」と推測している（推測エスカレーション禁止）
+
+### Depth × Next の生成ルール:
+- Depth 1: 事実・選択肢・状況を確認する問い
+- Depth 2: 構造的障壁・矛盾・「なぜ動けないか」を浮かび上がらせる問い
+- Depth 3: パターンの例外・起源・「それは本当にそう？」を問う
+
+### 判定に迷った場合: Depth 1。上げすぎより下げすぎが安全。
+
 ## 質問の規範
 - 広すぎる質問禁止（「それについてどう思いますか？」等）
 - 「なぜ」単独禁止、「どう思う」単独禁止
@@ -454,6 +490,7 @@ ${rerollConstraint || ''}
   "echo": "ユーザーの原文語彙を使った理解の映し返し",
   "sense": "仮説形でパターンや接続を浮かび上がらせる",
   "next": "二択 or 一点絞り込み型の問い",
+  "depth_level": 1,
   "mode": {
     "primary": "structure" | "release" | "depth",
     "secondary": "structure" | "release" | "depth" | null
@@ -463,11 +500,39 @@ ${rerollConstraint || ''}
     "working_hypothesis": "...",
     "open_loops": ["..."],
     "core_tension": "...",
-    "recent_question_angle": "..."
+    "recent_question_angle": "...",
+    "current_depth": 1
   }
 }
 
 JSONのみを出力してください。説明不要。`;
+}
+
+// --- Phase 6: Depth Control ---
+
+/**
+ * clampDepth — 上昇制御のみの安全弁。
+ *
+ * 責務: 過剰な depth escalation を止める。
+ * - R1 は常に 1
+ * - guardrail 発動中は常に 1
+ * - 2段階ジャンプ禁止（1→3 は不可、1→2→3 は可）
+ *
+ * 責務外: 深度の低下（2→1, 3→1, 3→2）は制御しない。
+ * 不安定時のキルスイッチ: 全行を `return 1;` に変えるだけで全セッション Depth 1 に戻せる。
+ */
+export function clampDepth(
+  rawDepth: number,
+  roundNumber: number,
+  previousDepth: number | undefined,
+  guardrailMode: GuardrailMode,
+): 1 | 2 | 3 {
+  if (roundNumber === 1) return 1;
+  if (guardrailMode !== 'standard') return 1;
+  const depth = Math.max(1, Math.min(3, rawDepth)) as 1 | 2 | 3;
+  const prev = previousDepth || 1;
+  if (depth > prev + 1) return (prev + 1) as 1 | 2 | 3;
+  return depth;
 }
 
 // --- Parser ---
@@ -484,6 +549,10 @@ export function parseTurnResponseV2(rawText: string): TurnResponseV2 | null {
   try {
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.echo || !parsed.sense || !parsed.next) return null;
+
+    // Phase 6: depth_level パース
+    const rawDepth = parsed.depth_level;
+    const depthLevel: 1 | 2 | 3 = (rawDepth === 1 || rawDepth === 2 || rawDepth === 3) ? rawDepth : 1;
 
     const memory: SessionMemory = {
       working_hypothesis:
@@ -503,6 +572,7 @@ export function parseTurnResponseV2(rawText: string): TurnResponseV2 | null {
       recent_question_angle: VALID_ANGLES.includes(parsed.memory?.recent_question_angle)
         ? parsed.memory.recent_question_angle
         : 'blindspot',
+      current_depth: depthLevel,
     };
 
     const primaryMode = VALID_MODES.includes(parsed.mode?.primary)
@@ -519,6 +589,7 @@ export function parseTurnResponseV2(rawText: string): TurnResponseV2 | null {
       mode: { primary: primaryMode, secondary: secondaryMode },
       memory,
       is_crisis: parsed.is_crisis === true,
+      depth_level: depthLevel,
     };
   } catch {
     return null;
@@ -562,8 +633,9 @@ export function generateFallbackEchoSenseNext(
         ? '今一番頭に浮かんでいるのは、人のことですか、それとも自分自身のことですか？'
         : '今の気持ちを一言で表すなら、「焦り」と「迷い」のどちらが近いですか？',
       mode: { primary: 'release' },
-      memory: { ...baseMemory, recent_question_angle: 'emotion' },
+      memory: { ...baseMemory, recent_question_angle: 'emotion', current_depth: 1 },
       is_crisis: false,
+      depth_level: 1 as const,
     };
   }
 
@@ -581,8 +653,10 @@ export function generateFallbackEchoSenseNext(
       memory: {
         ...baseMemory,
         recent_question_angle: roundNumber === 1 ? 'emotion' : roundNumber === 2 ? 'constraint' : 'action',
+        current_depth: 1,
       },
       is_crisis: false,
+      depth_level: 1 as const,
     };
   }
 
@@ -593,8 +667,9 @@ export function generateFallbackEchoSenseNext(
       ? '今いちばん先に言葉にしたいのは、どの部分ですか？'
       : '今すぐ誰かに相談するとしたら、何について聞きますか？',
     mode: { primary: 'structure' },
-    memory: { ...baseMemory, recent_question_angle: 'priority' },
+    memory: { ...baseMemory, recent_question_angle: 'priority', current_depth: 1 },
     is_crisis: false,
+    depth_level: 1 as const,
   };
 }
 
