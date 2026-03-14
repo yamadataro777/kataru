@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import CircularEqualizer from '@/components/recording/CircularEqualizer';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
@@ -87,6 +87,14 @@ const DURATIONS = [60, 90, 120] as const;
 // --- Component ---
 
 export default function RecordPage() {
+  return (
+    <Suspense fallback={null}>
+      <RecordPageInner />
+    </Suspense>
+  );
+}
+
+function RecordPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { profile } = useAuth();
