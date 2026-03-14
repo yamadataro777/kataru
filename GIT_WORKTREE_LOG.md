@@ -1,5 +1,11 @@
 # Git Worktree Log
 
+## 2026-03-14 (Phase 10)
+- **Branch**: main
+- **Action**: commit
+- **Commit**: (pending)
+- **Changes**: Phase 10 特定領域アダプタ — registry.ts/detect.ts/016_domain_adapters.sql (新規)、thinking-companion-prompt.ts adapterContext注入、round.ts 4段階flag+session/question拡張、StartModeSelector ショートカット、record adapter param、api.ts createRoundSession拡張、smoke.ts検証スクリプト
+
 ## 2026-03-13 (Phase 9)
 - **Branch**: main
 - **Action**: commit + push

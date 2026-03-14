@@ -1,38 +1,40 @@
-# Kataru マネタイズ改修 TODO
+# Phase 10: 特定領域アダプタ — 実装チェックリスト
 
-## Phase 1: ローンチ基盤
+## 実装ステップ
 
-- [ ] Supabase Auth 導入（メール+パスワード）
-  - [ ] DB: users プロファイルテーブル（plan, session_count）
-  - [ ] DB: sessions テーブルに user_id カラム追加
-  - [ ] Backend: 認証ミドルウェア（JWT 検証）
-  - [ ] Backend: 全ルートで user_id 検証
-  - [ ] Frontend: AuthContext + useAuth hook
-  - [ ] Frontend: ログイン/サインアップページ
-  - [ ] Frontend: 認証ガード（未ログインはログインページへ）
-- [ ] セッション数カウントの DB 移行
-  - [ ] session-tracker.ts を Supabase クエリベースに書き換え
-  - [ ] FREE_SESSION_LIMIT = 5
-  - [ ] UserPlan = 'free' | 'lite' | 'standard'
-  - [ ] getSessionPhase() 追加（段階的アンロック用）
-- [ ] 保存期間 3日 → 7日（Free プラン）
-- [ ] Render コールドスタート対策（ランディングページで /health ping）
+- [x] Step 0: 実装前TODO（DEVELOPMENT_HISTORY.md / GIT_WORKTREE_LOG.md / tasks/todo.md）
+- [ ] Step 1: アダプタ定義ファイル `backend/src/adapters/registry.ts`
+- [ ] Step 2: 自動検出関数 `backend/src/adapters/detect.ts`
+- [ ] Step 3: DBマイグレーション `backend/src/migrations/016_domain_adapters.sql`
+- [ ] Step 4: プロンプト注入 `backend/src/prompts/thinking-companion-prompt.ts`
+- [ ] Step 5: ルート変更 `backend/src/routes/round.ts`
+  - [ ] 5a: Feature flag (PHASE10_ADAPTER)
+  - [ ] 5b: POST /session — adapter_id 受理
+  - [ ] 5c: POST /question — auto-detect + effective adapter + コンテキスト注入
+  - [ ] 5d: テレメトリ拡張
+- [ ] Step 6: フロントエンド Feature Flag (.env.example)
+- [ ] Step 7: ホーム画面ショートカット (StartModeSelector.tsx)
+- [ ] Step 8: Record ページ連携 (record/page.tsx + api.ts)
+- [ ] Step 9: スモーク検証スクリプト `backend/src/adapters/__tests__/smoke.ts`
+- [ ] Step 10: ビルド検証 + スモークテスト実行
 
-## Phase 2: 課金基盤
+## Gate 9 チェックリスト (Phase 10 live化前に必須)
 
-- [ ] Stripe 連携
-  - [ ] Backend: Stripe Checkout セッション作成エンドポイント
-  - [ ] Backend: Webhook でプラン変更を DB 反映
-  - [ ] Frontend: 課金ページ UI
-- [ ] Lite ¥580 + Standard ¥1,480 の2プラン
-- [ ] バックエンドでのプラン検証（user_id → DB プラン参照）
-- [ ] ペイウォール UI の3段階化
+- [ ] 20セッション以上（仕事5/感情5/内省5/雑談5）× 3R止め+延長の両方を含む
+- [ ] 3Rで止めたセッションの体験品質が維持されている
+- [ ] 5Rまで延長したセッションが「長すぎ」と感じられない（20セッション中18回以上）
+- [ ] 延長ラウンドを含むまとめ画面の品質が維持されている
+- [ ] フォールバック率 < 5%、P95応答がSLO以内
 
-## Phase 3: 体験最適化
+## 検証レベル1: 実装検証 (dev完了基準)
 
-- [ ] 段階的アンロック実装
-  - [ ] セッション2: ティーザーUI（ブラー + アンロックCTA）
-  - [ ] セッション3: 有料レポートフル表示（1回限定）
-  - [ ] セッション4: 対話モードプレビュー（Stage 1-2 のみ）
-  - [ ] セッション5以降: ペイウォール
-- [ ] テキスト入力モード追加（/record にテキストタブ）
+- [ ] スモーク検証パス
+- [ ] Backend flag off → adapter_id無視、auto-detect未実行
+- [ ] Frontend flag off → ショートカット非表示
+- [ ] 手動選択フロー → adapter_id + source='manual' 保存 → コンテキスト注入確認
+- [ ] 自動検出テスト → マーケ用語5語 → adapter_id=marketing, source=auto
+- [ ] 自動検出不採用 → gap不足で null 維持
+- [ ] manual優先 → marketing選択 + キャリア用語多数 → marketing維持
+- [ ] ペア整合 → adapter_id=null + adapter_source='manual' → DB CHECK拒否
+- [ ] テレメトリ全フィールド正常記録
+- [ ] manual_live flag → ログ残るがDB更新なし・注入なし

@@ -1,5 +1,59 @@
 # Kataru 開発の軌跡
 
+## 2026-03-14: Phase 10 — 特定領域アダプタ
+
+### 概要
+汎用エンジンの上に領域特化コンテキスト（marketing / career / retrospective）を注入する最終フェーズ。コアプロンプトは一切書き換えない。手動選択（ホーム画面ショートカット）と自動検出（R1 transcript キーワード分析）の2経路。4段階 feature flag（off → dev → manual_live → live）で段階的 live 化。
+
+### 変更内容
+1. **アダプタ定義**: `backend/src/adapters/registry.ts` — AdapterId型、DomainAdapter型（detectionTerms + contextInjection ≤400文字）、3アダプタ定義、起動時assert、isValidAdapterId
+2. **自動検出**: `backend/src/adapters/detect.ts` — 入力正規化（全角→半角、記号除去）、3段ゲート検出（ユニークtermカウント → 閾値チェック → 差分チェック）、DetectionResult型
+3. **Migration**: `016_domain_adapters.sql` — adapter_id + adapter_source カラム + CHECK制約 + ペア整合制約
+4. **プロンプト注入**: `buildThinkingCompanionPrompt()` に `adapterContext?` パラメータ追加、trustMemoryHint直後・核心ルール直前に領域コンテキスト注入
+5. **Backend feature flag**: `PHASE10_ADAPTER=off|dev|manual_live|live`
+6. **POST /session 拡張**: `adapter_id` 受理 + route層バリデーション（isValidAdapterId）+ DB保存（adapter_source='manual'）
+7. **POST /question 拡張**: R1でauto-detect実行、persisted/detected/effective 3変数分離、manual優先・途中上書き禁止、flag別の注入/DB更新制御
+8. **テレメトリ拡張**: adapter_id, adapter_source, adapter_detection_scores, adapter_detection_decision, adapter_detection_rejection_type, adapter_detection_reason, adapter_phase10_flag
+9. **Frontend feature flag**: `NEXT_PUBLIC_PHASE10_ADAPTER=off|dev|manual_live|live`
+10. **ホーム画面ショートカット**: StartModeSelector に「マーケ壁打ち・キャリア・振り返り」テキストリンク（10px, opacity 0.4, Voice-first遵守）
+11. **Record ページ連携**: URL searchParams から adapter 読み取り → createRoundSession に adapter_id 渡し
+12. **スモーク検証**: `backend/src/adapters/__tests__/smoke.ts` — registry/正規化/検出ロジック/reason検証
+13. **Signed Adapter Token**: `backend/src/adapters/token.ts` — HMAC-SHA256署名付きトークン（`adapterId|sessionId|source|mac`）。PLAYBOOK §0-4「DB読込はセッション毎1回」遵守のため、R2+ではトークン検証のみでadapter_idを復元（per-round SELECT不要）
+14. **Reroll adapter対応**: reroll経路でもadapter contextを注入（ownership check SELECTにadapterカラムを載せる形で追加クエリなし）
+
+### 設計判断
+- **コアプロンプト不変**: アダプタは ≤400文字のコンテキスト注入のみ。Echo/Sense/Next ルールは変更しない
+- **Flag責務分離**: backend flag = 真実（注入/DB更新制御）、frontend flag = 表示制御のみ
+- **manual優先・途中上書き禁止**: manual設定済みならdetectAdapterを呼ばない
+- **3変数分離**: persistedAdapterId / detected / effectiveAdapterId を明確に区別
+- **manual_live → auto注入禁止**: ログは残すがDB更新もコンテキスト注入も行わない
+- **conservative auto-detect**: 3段ゲート（threshold + minGap）、短いaliasは語境界チェック
+- **Signed Adapter Token**: per-round DB SELECT を排除。サーバー署名トークンをクライアントが保持・返送し、署名検証のみで adapter_id を復元。timing-safe MAC比較でセキュリティ確保
+
+### Feature Flag（PHASE10_ADAPTER）
+| 値 | manual shortcut | auto-detect | コンテキスト注入 |
+|---|---|---|---|
+| `off` | 無視 | 実行しない | しない |
+| `dev` | 有効 | 有効 | する |
+| `manual_live` | 有効（live） | ログのみ（シャドウ） | manualのみ |
+| `live` | 有効 | 有効 | する |
+
+### 変更ファイル
+- `backend/src/adapters/registry.ts` (新規)
+- `backend/src/adapters/detect.ts` (新規)
+- `backend/src/adapters/token.ts` (新規)
+- `backend/src/adapters/__tests__/smoke.ts` (新規)
+- `backend/src/migrations/016_domain_adapters.sql` (新規)
+- `backend/src/prompts/thinking-companion-prompt.ts` (パラメータ追加 + 注入1行)
+- `backend/src/routes/round.ts` (flag + session/question拡張 + テレメトリ)
+- `backend/.env.example` (PHASE10_ADAPTER追加)
+- `frontend/src/components/dashboard/StartModeSelector.tsx` (ショートカット追加)
+- `frontend/src/app/record/page.tsx` (adapter URL param)
+- `frontend/src/lib/api.ts` (createRoundSession パラメータ追加)
+- `frontend/.env.example` (NEXT_PUBLIC_PHASE10_ADAPTER追加)
+
+---
+
 ## 2026-03-13: Phase 9 — ユーザー選択式延長
 
 ### 概要

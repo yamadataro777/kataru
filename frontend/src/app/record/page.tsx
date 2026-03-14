@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import CircularEqualizer from '@/components/recording/CircularEqualizer';
 import useAudioRecorder from '@/hooks/useAudioRecorder';
 import useAudioVisualizer from '@/hooks/useAudioVisualizer';
@@ -88,7 +88,11 @@ const DURATIONS = [60, 90, 120] as const;
 
 export default function RecordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile } = useAuth();
+
+  // Phase 10: adapter from URL params
+  const adapterId = searchParams.get('adapter') || undefined;
 
   // Phase state
   const [phase, setPhase] = useState<Phase>('idle');
@@ -96,6 +100,8 @@ export default function RecordPage() {
   const [selectedDuration, setSelectedDuration] = useState<number>(90);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [maxRoundsAllowed, setMaxRoundsAllowed] = useState(BASE_ROUND_COUNT);
+  // Phase 10: signed adapter token (server-issued, sent back each round)
+  const [adapterToken, setAdapterToken] = useState<string | null>(null);
 
   // Round data
   const [rounds, setRounds] = useState<RoundResult[]>([]);
@@ -145,10 +151,11 @@ export default function RecordPage() {
     sessionMemory: null as RoundSessionMemory | null,
     duration: 0,
     maxRoundsAllowed: BASE_ROUND_COUNT,
+    adapterToken: null as string | null,
   });
   useEffect(() => {
-    stateRef.current = { sessionId, roundNumber, rounds, sessionMemory, duration, maxRoundsAllowed };
-  }, [sessionId, roundNumber, rounds, sessionMemory, duration, maxRoundsAllowed]);
+    stateRef.current = { sessionId, roundNumber, rounds, sessionMemory, duration, maxRoundsAllowed, adapterToken };
+  }, [sessionId, roundNumber, rounds, sessionMemory, duration, maxRoundsAllowed, adapterToken]);
 
   // Computed
   const energyLevel = useMemo(() => {
@@ -222,6 +229,10 @@ export default function RecordPage() {
             'previous_ratings',
             JSON.stringify(snap.rounds.map((r) => r.questionRating)),
           );
+          // Phase 10: send adapter token (manual from session creation, or auto from R1)
+          if (snap.adapterToken) {
+            formData.append('adapter_token', snap.adapterToken);
+          }
 
           if (clientTranscript && clientTranscript.length > 0) {
             formData.append('transcript', clientTranscript);
@@ -235,6 +246,12 @@ export default function RecordPage() {
           }
 
           const result = await submitRoundQuestion(formData);
+
+          // Phase 10: capture adapter token from R1 auto-detect
+          if (snap.roundNumber === 1 && result.adapter_token) {
+            setAdapterToken(result.adapter_token);
+            stateRef.current.adapterToken = result.adapter_token;
+          }
 
           // Phase 8: capture experiment metadata from R1
           if (snap.roundNumber === 1 && result.experiment_stage) {
@@ -291,9 +308,14 @@ export default function RecordPage() {
     try {
       let sid = sessionId;
       if (roundNumber === 1) {
-        const session = await createRoundSession(selectedDuration);
+        const session = await createRoundSession(selectedDuration, adapterId);
         sid = session.id;
         setSessionId(sid);
+        // Phase 10: store adapter token from manual selection
+        if (session.adapter_token) {
+          setAdapterToken(session.adapter_token);
+          stateRef.current.adapterToken = session.adapter_token;
+        }
         // Update ref immediately for async use
         stateRef.current.sessionId = sid;
       }
@@ -305,7 +327,7 @@ export default function RecordPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'セッション作成に失敗しました');
     }
-  }, [sessionId, roundNumber, selectedDuration, startRecording]);
+  }, [sessionId, roundNumber, selectedDuration, startRecording, adapterId]);
 
   const handleStopRecording = useCallback(() => {
     capturedTranscriptRef.current = transcript;

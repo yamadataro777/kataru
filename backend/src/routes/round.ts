@@ -51,6 +51,9 @@ import {
   extractThemeLabels,
   themeToTopicBucket,
 } from '../services/trust-memory';
+import { AdapterId, ADAPTER_REGISTRY, isValidAdapterId } from '../adapters/registry';
+import { detectAdapter, DetectionResult } from '../adapters/detect';
+import { createAdapterToken, verifyAdapterToken, AdapterTokenPayload } from '../adapters/token';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -63,6 +66,14 @@ type Phase9Flag = 'off' | 'dev' | 'live';
 function getPhase9Flag(): Phase9Flag {
   const val = process.env.PHASE9_EXTENSION || 'off';
   if (val === 'dev' || val === 'live') return val;
+  return 'off';
+}
+
+// --- Phase 10: Adapter feature flag ---
+type Phase10Flag = 'off' | 'dev' | 'manual_live' | 'live';
+function getPhase10Flag(): Phase10Flag {
+  const val = process.env.PHASE10_ADAPTER || 'off';
+  if (['dev', 'manual_live', 'live'].includes(val)) return val as Phase10Flag;
   return 'off';
 }
 
@@ -107,11 +118,25 @@ function patchDepthIntoMemory(
 router.post('/session', requireAuth, async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { selected_duration } = req.body;
+    const { selected_duration, adapter_id } = req.body;
 
     if (![60, 90, 120].includes(selected_duration)) {
       res.status(400).json({ error: 'selected_duration must be 60, 90, or 120' });
       return;
+    }
+
+    // Phase 10: adapter_id validation
+    const phase10Flag = getPhase10Flag();
+    let validatedAdapterId: AdapterId | null = null;
+    if (adapter_id) {
+      if (phase10Flag === 'off') {
+        // Flag off → adapter_id を無視（エラーにはしない）
+      } else if (!isValidAdapterId(adapter_id)) {
+        res.status(400).json({ error: `Invalid adapter_id: ${adapter_id}` });
+        return;
+      } else {
+        validatedAdapterId = adapter_id;
+      }
     }
 
     const { data, error } = await supabase
@@ -120,19 +145,35 @@ router.post('/session', requireAuth, async (req: Request, res: Response) => {
         user_id: authReq.userId === 'dev-user' ? null : authReq.userId,
         selected_duration,
         status: 'active',
+        // Phase 10: manual adapter selection
+        ...(validatedAdapterId ? { adapter_id: validatedAdapterId, adapter_source: 'manual' } : {}),
       })
       .select()
       .single();
 
     if (error) throw error;
 
+    // Phase 10: issue signed adapter token for manual adapter
+    const adapterToken = validatedAdapterId
+      ? createAdapterToken(validatedAdapterId, data.id, 'manual')
+      : undefined;
+
     await supabase.from('round_events').insert({
       session_id: data.id,
       event_type: 'session_started',
-      data: { selected_duration },
+      data: {
+        selected_duration,
+        // Phase 10 telemetry
+        ...(validatedAdapterId ? { adapter_id: validatedAdapterId, adapter_source: 'manual' } : {}),
+        adapter_phase10_flag: phase10Flag,
+      },
     });
 
-    res.json({ id: data.id, created_at: data.created_at });
+    res.json({
+      id: data.id,
+      created_at: data.created_at,
+      ...(adapterToken ? { adapter_token: adapterToken } : {}),
+    });
   } catch (err) {
     console.error('Create round session error:', err);
     res.status(500).json({ error: 'Failed to create session' });
@@ -264,6 +305,51 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
         }
       }
 
+      // Phase 10: Domain Adapter — signed token + R1 auto-detect
+      // PLAYBOOK §0-4 遵守: round_sessions SELECT を行わず、署名付きトークンで復元
+      const phase10Flag = getPhase10Flag();
+      let tokenPayload: AdapterTokenPayload | null = null;
+      let detectionResult: DetectionResult | null = null;
+      let effectiveAdapterId: AdapterId | null = null;
+      let effectiveAdapterSource: 'manual' | 'auto' | null = null;
+      let adapterContext: string | undefined;
+      let newAdapterToken: string | undefined;  // R1 auto-detect 採用時に発行
+
+      if (phase10Flag !== 'off') {
+        // 1. トークン検証（manual or 前 R1 で発行済み）— DB読み不要
+        const rawToken = req.body.adapter_token;
+        if (rawToken && typeof rawToken === 'string') {
+          tokenPayload = verifyAdapterToken(rawToken, session_id);
+        }
+
+        // 2. R1 auto-detect: トークンなし（manual 未選択）の場合のみ実行
+        if (roundNum === 1 && !tokenPayload) {
+          detectionResult = detectAdapter(finalTranscript);
+
+          // DB update + token発行: dev or live のみ（manual_live ではシャドウログのみ）
+          if (detectionResult.adapterId && (phase10Flag === 'dev' || phase10Flag === 'live')) {
+            newAdapterToken = createAdapterToken(detectionResult.adapterId, session_id, 'auto');
+            // DB update は既存 Promise.all 内で実行（後述）
+          }
+        }
+
+        // 3. effectiveAdapterId 決定
+        if (tokenPayload) {
+          // manual or 前 R1 auto-detect のトークンが有効
+          effectiveAdapterId = tokenPayload.adapterId;
+          effectiveAdapterSource = tokenPayload.source;
+        } else if ((phase10Flag === 'dev' || phase10Flag === 'live') && detectionResult?.adapterId) {
+          // R1 auto-detect 採用（トークン発行済み）
+          effectiveAdapterId = detectionResult.adapterId;
+          effectiveAdapterSource = 'auto';
+        }
+        // manual_live + auto-detect → effectiveAdapterId は null（注入もトークン発行もしない）
+
+        if (effectiveAdapterId) {
+          adapterContext = ADAPTER_REGISTRY[effectiveAdapterId]?.contextInjection;
+        }
+      }
+
       // Crisis detection: 2-tier regex safety net
       const crisisSignal = detectCrisisRegex(finalTranscript);
 
@@ -286,7 +372,7 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
           prevQuestions,
           usePrevRatings ? prevRatings : undefined,
         );
-        const prompt = buildThinkingCompanionPrompt(context, roundNum, guardrail, sensitiveTopic.topicLabel, undefined, trustMemoryHint);
+        const prompt = buildThinkingCompanionPrompt(context, roundNum, guardrail, sensitiveTopic.topicLabel, undefined, trustMemoryHint, adapterContext);
 
         try {
           const geminiStart = Date.now();
@@ -427,6 +513,11 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             session_memory: persistedMemory,
             // Phase 8: R1 snapshot — 既存 update に同梱（追加クエリなし）
             ...(roundNum === 1 && cachedTrustMemory ? { trust_memory_snapshot: cachedTrustMemory } : {}),
+            // Phase 10: R1 auto-detect DB保存 — 既存 update に同梱（追加クエリなし）
+            ...(newAdapterToken && detectionResult?.adapterId ? {
+              adapter_id: detectionResult.adapterId,
+              adapter_source: 'auto',
+            } : {}),
           })
           .eq('id', session_id),
         supabase.from('round_events').insert({
@@ -466,6 +557,16 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
             inject_variant: injectVariant,
             profile_injected: profileInjected,
             profile_hint_length: trustMemoryHint?.length ?? 0,
+            // Phase 10 telemetry
+            adapter_id: effectiveAdapterId,
+            adapter_source: effectiveAdapterSource,
+            adapter_phase10_flag: phase10Flag,
+            ...(detectionResult ? {
+              adapter_detection_scores: detectionResult.scores,
+              adapter_detection_decision: detectionResult.decision,
+              adapter_detection_rejection_type: detectionResult.rejectionType,
+              adapter_detection_reason: detectionResult.reason,
+            } : {}),
           },
         }),
       ]);
@@ -489,6 +590,8 @@ router.post('/question', requireAuth, upload.single('audio'), async (req: Reques
         inject_variant: injectVariant,
         has_prior_memory: cachedTrustMemory !== null,
         snapshot_version_at_start: cachedTrustMemory?.version ?? 0,
+        // Phase 10: adapter token (R1 auto-detect 採用時に発行)
+        ...(newAdapterToken ? { adapter_token: newAdapterToken } : {}),
       });
       return;
     }
@@ -1081,10 +1184,10 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
       return;
     }
 
-    // 2. Ownership check
+    // 2. Ownership check (Phase 10: include adapter columns)
     const { data: session } = await supabase
       .from('round_sessions')
-      .select('user_id')
+      .select('user_id, adapter_id, adapter_source')
       .eq('id', round.session_id)
       .single();
 
@@ -1294,6 +1397,22 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
     }
 
     // 7. Normal reroll path
+    // Phase 10: Load adapter context for reroll
+    let rerollAdapterContext: string | undefined;
+    if (getPhase10Flag() !== 'off' && session.adapter_id && isValidAdapterId(session.adapter_id)) {
+      const rerollFlag = getPhase10Flag();
+      // manual_live: manual adapter is live, so inject
+      // dev/live: inject
+      if (rerollFlag !== 'off') {
+        // manual_live → only inject if source is manual
+        if (rerollFlag === 'manual_live' && session.adapter_source !== 'manual') {
+          // no injection for auto-detected adapters in manual_live
+        } else {
+          rerollAdapterContext = ADAPTER_REGISTRY[session.adapter_id as AdapterId]?.contextInjection;
+        }
+      }
+    }
+
     const guardrail: GuardrailMode = resolveGuardrail(sensitiveTopic, pullBack);
     const context = buildContextV2(
       round.transcript,
@@ -1312,6 +1431,8 @@ router.post('/round/:id/reroll', requireAuth, async (req: Request, res: Response
       guardrail,
       sensitiveTopic.topicLabel,
       rerollConstraint,
+      undefined,
+      rerollAdapterContext,
     );
 
     // 8. Gemini call

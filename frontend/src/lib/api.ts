@@ -491,6 +491,8 @@ export interface RoundQuestionResponse {
   inject_variant?: 'inject' | 'control' | null;
   has_prior_memory?: boolean;
   snapshot_version_at_start?: number;
+  // Phase 10: adapter token (R1 auto-detect 採用時)
+  adapter_token?: string;
 }
 
 export interface RoundSummaryResponseV1 {
@@ -521,10 +523,14 @@ export type RoundSummaryResponse = RoundSummaryResponseV1 | RoundSummaryResponse
 
 export async function createRoundSession(
   selectedDuration: number,
-): Promise<{ id: string; created_at: string }> {
+  adapterId?: string,
+): Promise<{ id: string; created_at: string; adapter_token?: string }> {
   return request('/api/round/session', {
     method: 'POST',
-    body: JSON.stringify({ selected_duration: selectedDuration }),
+    body: JSON.stringify({
+      selected_duration: selectedDuration,
+      ...(adapterId ? { adapter_id: adapterId } : {}),
+    }),
   });
 }
 
