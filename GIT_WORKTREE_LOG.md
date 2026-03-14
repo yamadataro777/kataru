@@ -3,8 +3,8 @@
 ## 2026-03-14 (Phase 10)
 - **Branch**: main
 - **Action**: commit
-- **Commit**: (pending)
-- **Changes**: Phase 10 特定領域アダプタ — registry.ts/detect.ts/016_domain_adapters.sql (新規)、thinking-companion-prompt.ts adapterContext注入、round.ts 4段階flag+session/question拡張、StartModeSelector ショートカット、record adapter param、api.ts createRoundSession拡張、smoke.ts検証スクリプト
+- **Commit**: bb0944d — feat: Phase 10 特定領域アダプタ — manual shortcut + auto-detect + signed token
+- **Changes**: registry.ts/detect.ts/token.ts/016_domain_adapters.sql (新規)、thinking-companion-prompt.ts adapterContext注入、round.ts 4段階flag+session/question拡張+signed token検証、StartModeSelector ショートカット、record adapter param+token flow、api.ts createRoundSession拡張、smoke.ts検証スクリプト(30テスト)
 
 ## 2026-03-13 (Phase 9)
 - **Branch**: main
